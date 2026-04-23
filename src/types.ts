@@ -270,6 +270,81 @@ export interface VoteOption {
   [key: string]: unknown;
 }
 
+// --- Worlds ---
+
+export interface WorldInfo {
+  world_id: string;
+  status: string;
+  mode?: string;
+  player_count: number;
+  max_players: number;
+  grid_size?: number;
+  players?: string[];
+  started_at?: number;
+  phase?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+export interface WorldListResponse {
+  worlds: WorldInfo[];
+}
+
+export interface WorldListParams {
+  mode?: string;
+  has_capacity?: boolean;
+}
+
+export interface CreateWorldParams {
+  mode: string;
+}
+
+export interface WorldTick {
+  tick: number;
+  updates: EntityDelta[];
+}
+
+export interface EntityDelta {
+  op: "a" | "u" | "r" | string;
+  id: string;
+  [key: string]: unknown;
+}
+
+export interface WorldTerrainChunk {
+  coords: [number, number];
+  data: string;
+}
+
+// --- Direct messages ---
+
+export interface DirectMessage {
+  id?: string;
+  channel_id?: string;
+  sender_id?: string;
+  recipient_id?: string;
+  content: string;
+  sent_at?: string;
+  [key: string]: unknown;
+}
+
+export interface SendDmParams {
+  recipient_id: string;
+  content: string;
+}
+
+export interface DmSendResult {
+  success: boolean;
+  channel_id: string;
+}
+
+export interface DmHistoryResponse {
+  messages: DirectMessage[];
+  channel_id: string;
+}
+
+export interface DmHistoryParams {
+  limit?: number;
+}
+
 // --- WebSocket ---
 
 export interface WsMessage {
@@ -290,6 +365,13 @@ export type WsEventType =
   | "chat.message"
   | "chat.joined"
   | "chat.left"
+  | "dm.message"
+  | "dm.sent"
+  | "world.list"
+  | "world.joined"
+  | "world.left"
+  | "world.tick"
+  | "world.terrain"
   | "presence.updated"
   | "notification.new"
   | "vote.cast_ok"

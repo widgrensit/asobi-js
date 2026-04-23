@@ -13,6 +13,8 @@ import { TournamentsApi } from "./tournaments.js";
 import { NotificationsApi } from "./notifications.js";
 import { StorageApi } from "./storage.js";
 import { VotesApi } from "./votes.js";
+import { WorldsApi } from "./worlds.js";
+import { DirectMessagesApi } from "./dm.js";
 import type { AsobiClientOptions, AsobiWebSocketOptions } from "./types.js";
 
 export class Asobi {
@@ -30,6 +32,8 @@ export class Asobi {
   readonly notifications: NotificationsApi;
   readonly storage: StorageApi;
   readonly votes: VotesApi;
+  readonly worlds: WorldsApi;
+  readonly dm: DirectMessagesApi;
 
   constructor(options: AsobiClientOptions) {
     this.client = new AsobiClient(options);
@@ -46,6 +50,8 @@ export class Asobi {
     this.notifications = new NotificationsApi(this.client);
     this.storage = new StorageApi(this.client);
     this.votes = new VotesApi(this.client);
+    this.worlds = new WorldsApi(this.client);
+    this.dm = new DirectMessagesApi(this.client);
   }
 
   websocket(options?: Partial<AsobiWebSocketOptions>): AsobiWebSocket {
@@ -77,4 +83,6 @@ export { TournamentsApi } from "./tournaments.js";
 export { NotificationsApi } from "./notifications.js";
 export { StorageApi } from "./storage.js";
 export { VotesApi } from "./votes.js";
+export { WorldsApi } from "./worlds.js";
+export { DirectMessagesApi } from "./dm.js";
 export type * from "./types.js";

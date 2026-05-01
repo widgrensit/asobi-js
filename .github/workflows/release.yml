@@ -95,7 +95,7 @@ jobs:
       - name: Install + build
         if: steps.resolve.outputs.skip == 'false'
         run: |
-          npm ci
+          npm install
           npm run build
 
       - name: Publish to npm

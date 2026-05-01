@@ -9,10 +9,16 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      id-token: write
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
 
       - name: Determine next version
         id: version
@@ -85,3 +91,15 @@ jobs:
           git tag "$TAG"
           git push origin "$TAG"
           gh release create "$TAG" --title "$TAG" --notes "$CHANGELOG"
+
+      - name: Install + build
+        if: steps.resolve.outputs.skip == 'false'
+        run: |
+          npm ci
+          npm run build
+
+      - name: Publish to npm
+        if: steps.resolve.outputs.skip == 'false'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --provenance --access public

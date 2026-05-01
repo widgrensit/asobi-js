@@ -1,22 +1,26 @@
-// Smoke test for @asobi/client against the asobi-test-harness.
+// Smoke test for @asobi/client against widgrensit/sdk_demo_backend.
 //
-// Expects the harness running at ASOBI_URL (default http://localhost:8080)
-// with the `smoke` game mode loaded (see widgrensit/asobi-test-harness).
+// Expects sdk_demo_backend running at ASOBI_URL (default http://localhost:8084)
+// with the `demo` mode loaded. See:
+//   https://github.com/widgrensit/sdk_demo_backend
+// and the canonical spec at SMOKE.md in that repo.
 //
 // Exits 0 if the 3 canonical scenarios pass, 1 otherwise.
 
 import { Asobi, AsobiWebSocket } from "../src/index.js";
 
-const BASE_URL = process.env.ASOBI_URL ?? "http://localhost:8080";
-const MATCH_MODE = "smoke";
+const BASE_URL = process.env.ASOBI_URL ?? "http://localhost:8084";
+const MATCH_MODE = "demo";
 const STARTUP_TIMEOUT_MS = 60_000;
 const MATCH_JOIN_TIMEOUT_MS = 10_000;
 const STATE_TIMEOUT_MS = 3_000;
+const INITIAL_STATE_TIMEOUT_MS = 3_000;
+const X_DELTA_THRESHOLD = 10;
 
 async function main() {
-  log("Waiting for harness at", BASE_URL);
+  log("Waiting for sdk_demo_backend at", BASE_URL);
   await waitForServer(BASE_URL);
-  log("Harness reachable.");
+  log("Backend reachable.");
 
   // Scenario 1 + 2: register two players, both connect, both queue.
   const [a, b] = await Promise.all([spawnPlayer("a"), spawnPlayer("b")]);
@@ -43,16 +47,32 @@ async function main() {
     );
   }
 
-  // Scenario 3: send one match.input from player A, observe player A's
-  // x rise to 1 in a subsequent match.state.
-  const statePromise = waitForState(a.ws, a.playerId, STATE_TIMEOUT_MS);
+  // Scenario 3: capture initial x from the first match.state, then send one
+  // match.input and assert a subsequent state shows x advanced past
+  // x_initial + threshold. Player spawn x is random in [50, 700], so we
+  // must compare against x_initial, never a literal.
+  const xInitial = await waitForInitialX(
+    a.ws,
+    a.playerId,
+    INITIAL_STATE_TIMEOUT_MS
+  );
+  log("Initial x =", xInitial);
+
+  const statePromise = waitForXAdvanced(
+    a.ws,
+    a.playerId,
+    xInitial,
+    X_DELTA_THRESHOLD,
+    STATE_TIMEOUT_MS
+  );
   a.ws.sendFire("match.input", { data: { move_x: 1, move_y: 0 } });
 
   const myPos = await statePromise;
-  if (myPos.x !== 1) {
-    throw new Error(`expected x==1 after one input, got ${myPos.x}`);
-  }
-  log("match.state confirmed: x =", myPos.x);
+  log(
+    `match.state confirmed: x = ${myPos.x} (initial ${xInitial}, delta ${
+      myPos.x - xInitial
+    })`
+  );
 
   a.ws.close();
   b.ws.close();
@@ -108,20 +128,49 @@ function waitFor(
   });
 }
 
-function waitForState(
+function waitForInitialX(
   ws: AsobiWebSocket,
   playerId: string,
+  timeoutMs: number
+): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      ws.off("match.state", handler);
+      reject(new Error("timeout waiting for first match.state"));
+    }, timeoutMs);
+    const handler = (payload: Record<string, unknown>) => {
+      const players = (payload.players ?? {}) as Record<string, unknown>;
+      const me = players[playerId] as { x?: number } | undefined;
+      if (me && typeof me.x === "number") {
+        clearTimeout(timer);
+        ws.off("match.state", handler);
+        resolve(me.x);
+      }
+    };
+    ws.on("match.state", handler);
+  });
+}
+
+function waitForXAdvanced(
+  ws: AsobiWebSocket,
+  playerId: string,
+  xInitial: number,
+  threshold: number,
   timeoutMs: number
 ): Promise<{ x: number; y: number }> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       ws.off("match.state", handler);
-      reject(new Error("timeout waiting for match.state with input applied"));
+      reject(
+        new Error(
+          `timeout waiting for x > ${xInitial + threshold} (initial ${xInitial})`
+        )
+      );
     }, timeoutMs);
     const handler = (payload: Record<string, unknown>) => {
       const players = (payload.players ?? {}) as Record<string, unknown>;
       const me = players[playerId] as { x?: number; y?: number } | undefined;
-      if (me && typeof me.x === "number" && me.x >= 1) {
+      if (me && typeof me.x === "number" && me.x > xInitial + threshold) {
         clearTimeout(timer);
         ws.off("match.state", handler);
         resolve({ x: me.x, y: me.y ?? 0 });
@@ -144,7 +193,7 @@ async function waitForServer(url: string): Promise<void> {
     }
     await sleep(1000);
   }
-  throw new Error(`harness never became reachable at ${url}`);
+  throw new Error(`sdk_demo_backend never became reachable at ${url}`);
 }
 
 function sleep(ms: number): Promise<void> {

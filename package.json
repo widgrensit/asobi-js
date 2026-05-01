@@ -1,16 +1,42 @@
 {
-  "name": "@asobi/client",
-  "version": "0.1.0",
-  "description": "TypeScript client SDK for the Asobi game backend",
+  "name": "@widgrensit/asobi",
+  "version": "0.2.0",
+  "description": "TypeScript client SDK for the Asobi game backend. Real-time multiplayer, matchmaking, leaderboards, economy, social, and worlds.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
-    "dist"
+    "dist",
+    "src"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/widgrensit/asobi-js.git"
+  },
+  "homepage": "https://github.com/widgrensit/asobi-js#readme",
+  "bugs": {
+    "url": "https://github.com/widgrensit/asobi-js/issues"
+  },
+  "keywords": [
+    "asobi",
+    "game",
+    "game-backend",
+    "multiplayer",
+    "matchmaking",
+    "websocket",
+    "realtime"
   ],
   "scripts": {
     "build": "tsc",
     "clean": "rm -rf dist",
+    "prepare": "npm run build",
     "smoke": "tsx smoke_tests/smoke.ts"
   },
   "devDependencies": {
@@ -18,7 +44,10 @@
     "typescript": "^5.4.0"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.0.0"
   },
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public"
+  }
 }

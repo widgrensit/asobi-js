@@ -7,9 +7,15 @@ type CidResolver = {
   timer: ReturnType<typeof setTimeout>;
 };
 
+const AUTH_FAILURE_REASONS: ReadonlySet<string> = new Set([
+  "invalid_token",
+  "session_revoked",
+  "idle_auth_timeout",
+]);
+
 export class AsobiWebSocket {
   private readonly url: string;
-  private readonly token: string;
+  private token: string;
   private readonly reconnect: boolean;
   private readonly reconnectInterval: number;
   private readonly maxReconnectAttempts: number;
@@ -22,6 +28,7 @@ export class AsobiWebSocket {
   private reconnectAttempts = 0;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private closed = false;
+  private authExpired = false;
 
   constructor(options: AsobiWebSocketOptions) {
     this.url = options.url;
@@ -35,23 +42,33 @@ export class AsobiWebSocket {
   connect(): Promise<Record<string, unknown>> {
     return new Promise((resolve, reject) => {
       this.closed = false;
+      this.authExpired = false;
       this.ws = new WebSocket(this.url);
 
       this.ws.onopen = () => {
         this.reconnectAttempts = 0;
         this.startHeartbeat();
-        this.send("session.connect", { token: this.token })
+        this.authenticate()
           .then(resolve)
-          .catch(reject);
+          .catch((err) => {
+            if (this.isAuthFailure(err)) {
+              this.failAuth(err.message);
+            }
+            reject(err);
+          });
       };
 
       this.ws.onmessage = (event) => {
         this.handleMessage(event.data as string);
       };
 
-      this.ws.onclose = () => {
+      this.ws.onclose = (event) => {
         this.stopHeartbeat();
-        this.emit("_close", {});
+        this.emit("_close", { code: (event as CloseEvent)?.code });
+        if ((event as CloseEvent)?.code === 1008 || this.authExpired) {
+          this.failAuth("auth_closed");
+          return;
+        }
         if (this.reconnect && !this.closed && this.reconnectAttempts < this.maxReconnectAttempts) {
           this.reconnectAttempts++;
           setTimeout(() => this.connect(), this.reconnectInterval);
@@ -62,6 +79,29 @@ export class AsobiWebSocket {
         this.emit("_error", {});
       };
     });
+  }
+
+  private authenticate(): Promise<Record<string, unknown>> {
+    return this.send("session.connect", { token: this.token });
+  }
+
+  setToken(token: string): Promise<Record<string, unknown>> | void {
+    this.token = token;
+    this.authExpired = false;
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      return this.authenticate();
+    }
+  }
+
+  private isAuthFailure(err: unknown): err is Error {
+    return err instanceof Error && AUTH_FAILURE_REASONS.has(err.message);
+  }
+
+  private failAuth(reason: string): void {
+    this.authExpired = true;
+    this.closed = true;
+    this.stopHeartbeat();
+    this.emit("auth_expired", { reason });
   }
 
   close(): void {
@@ -123,7 +163,21 @@ export class AsobiWebSocket {
       return;
     }
 
+    if (this.isAuthFailureMessage(msg)) {
+      this.emit(msg.type, msg.payload);
+      this.failAuth(String(msg.payload.reason ?? msg.type));
+      this.ws?.close();
+      return;
+    }
+
     this.emit(msg.type, msg.payload);
+  }
+
+  private isAuthFailureMessage(msg: WsMessage): boolean {
+    if (msg.type === "session_revoked" || msg.type === "session.revoked") {
+      return true;
+    }
+    return msg.type === "error" && AUTH_FAILURE_REASONS.has(String(msg.payload.reason));
   }
 
   private emit(event: string, payload: Record<string, unknown>): void {

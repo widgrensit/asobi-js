@@ -2,8 +2,8 @@
 // WebSocket message handler and asserts the right listener fires.
 //
 // Pure unit test — no network. Catches doc-vs-server drift bugs (e.g.
-// server emits `match.matched` but SDK's WsEventType union or docs only
-// mention `matchmaker.matched`) before any user reports a silent failure.
+// SDK's WsEventType union or docs list an event the server no longer
+// emits) before any user reports a silent failure.
 
 import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
@@ -24,14 +24,8 @@ const EXPECTED: ReadonlySet<string> = new Set([
   "match.finished",
   "match.joined",
   "match.left",
-  "match.matched",
   "match.matchmaker_expired",
-  "match.matchmaker_failed",
   "match.state",
-  "match.vote_result",
-  "match.vote_start",
-  "match.vote_tally",
-  "match.vote_vetoed",
   "matchmaker.queued",
   "matchmaker.removed",
   "notification.new",
@@ -117,14 +111,8 @@ describe("protocol dispatch", () => {
       "match.finished",
       "match.joined",
       "match.left",
-      "match.matched",
       "match.matchmaker_expired",
-      "match.matchmaker_failed",
       "match.state",
-      "match.vote_result",
-      "match.vote_start",
-      "match.vote_tally",
-      "match.vote_vetoed",
       "matchmaker.queued",
       "matchmaker.removed",
       "notification.new",

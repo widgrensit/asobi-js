@@ -90,12 +90,12 @@ type Player = {
 async function spawnPlayer(label: string): Promise<Player> {
   const asobi = new Asobi({ baseUrl: BASE_URL });
   const username = `smoke_${label}_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
-  const { player_id, session_token } = await asobi.auth.register({
+  const { player_id, access_token } = await asobi.auth.register({
     username,
     password: "smoke_pw_12345",
     display_name: username,
   });
-  const ws = asobi.websocket({ token: session_token });
+  const ws = asobi.websocket({ token: access_token });
   if (process.env.SMOKE_DEBUG) {
     ws.on("*", (p) => log(`[${label}] ←`, JSON.stringify(p).slice(0, 200)));
   }

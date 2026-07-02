@@ -55,7 +55,7 @@ export class Asobi {
   }
 
   websocket(options?: Partial<AsobiWebSocketOptions>): AsobiWebSocket {
-    const token = this.client.getToken();
+    const token = this.client.getAccessToken();
     if (!token && !options?.token) {
       throw new Error("No token available. Login first or provide a token.");
     }
@@ -68,7 +68,7 @@ export class Asobi {
   }
 }
 
-export { AsobiClient, AsobiError } from "./client.js";
+export { AsobiClient, AsobiError, AsobiAuthExpiredError } from "./client.js";
 export { AsobiWebSocket } from "./websocket.js";
 export { AuthApi } from "./auth.js";
 export { PlayersApi } from "./players.js";

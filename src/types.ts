@@ -13,13 +13,19 @@ export interface LoginParams {
 
 export interface AuthResponse {
   player_id: string;
-  session_token: string;
+  access_token: string;
+  refresh_token: string;
   username: string;
+  created?: boolean;
 }
 
 export interface RefreshResponse {
-  player_id: string;
-  session_token: string;
+  access_token: string;
+  refresh_token: string;
+}
+
+export interface LogoutParams {
+  refresh_token?: string;
 }
 
 export interface OAuthParams {
@@ -387,9 +393,16 @@ export type WsEventType =
   | "world.terrain"
   | "world.tick";
 
+export interface TokenPair {
+  accessToken?: string;
+  refreshToken?: string;
+}
+
 export interface AsobiClientOptions {
   baseUrl: string;
-  token?: string;
+  accessToken?: string;
+  refreshToken?: string;
+  onTokens?: (tokens: TokenPair) => void;
 }
 
 export interface AsobiWebSocketOptions {

@@ -3,11 +3,13 @@ import type {
   Wallet,
   WalletHistoryParams,
   Transaction,
-  StoreItem,
+  StoreListing,
   PurchaseParams,
   PurchaseResult,
-  IapReceiptParams,
-  IapResult,
+  IapAppleParams,
+  IapGoogleParams,
+  IapAppleResult,
+  IapGoogleResult,
 } from "./types.js";
 
 const PREFIX = "/api/v1";
@@ -26,19 +28,19 @@ export class EconomyApi {
     );
   }
 
-  store(): Promise<StoreItem[]> {
-    return this.client.get<StoreItem[]>(`${PREFIX}/store`);
+  store(): Promise<StoreListing[]> {
+    return this.client.get<StoreListing[]>(`${PREFIX}/store`);
   }
 
   purchase(params: PurchaseParams): Promise<PurchaseResult> {
     return this.client.post<PurchaseResult>(`${PREFIX}/store/purchase`, params);
   }
 
-  verifyApple(params: IapReceiptParams): Promise<IapResult> {
-    return this.client.post<IapResult>(`${PREFIX}/iap/apple`, params);
+  verifyApple(params: IapAppleParams): Promise<IapAppleResult> {
+    return this.client.post<IapAppleResult>(`${PREFIX}/iap/apple`, params);
   }
 
-  verifyGoogle(params: IapReceiptParams): Promise<IapResult> {
-    return this.client.post<IapResult>(`${PREFIX}/iap/google`, params);
+  verifyGoogle(params: IapGoogleParams): Promise<IapGoogleResult> {
+    return this.client.post<IapGoogleResult>(`${PREFIX}/iap/google`, params);
   }
 }

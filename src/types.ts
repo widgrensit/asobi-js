@@ -44,15 +44,45 @@ export interface UnlinkProviderParams {
 
 // --- IAP ---
 
-export interface IapReceiptParams {
-  receipt: string;
-  product_id?: string;
+export interface IapAppleParams {
+  signed_transaction: string;
 }
 
-export interface IapResult {
+export interface IapGoogleParams {
+  product_id: string;
+  purchase_token: string;
+}
+
+export interface IapAppleResult {
+  product_id: string;
+  transaction_id: string;
+  original_transaction_id: string;
+  purchase_date: string;
+  expires_date: number;
+  quantity: number;
+  type: string;
   valid: boolean;
-  product_id?: string;
-  [key: string]: unknown;
+  duplicate: boolean;
+}
+
+export interface IapGoogleResult {
+  product_id: string;
+  order_id: string;
+  purchase_time: string;
+  consumption_state: number;
+  acknowledged: boolean;
+  valid: boolean;
+  duplicate: boolean;
+}
+
+export interface IapTransaction {
+  id: string;
+  player_id: string;
+  provider: string;
+  transaction_id: string;
+  original_transaction_id: string;
+  product_id: string;
+  inserted_at: string;
 }
 
 // --- Players ---
@@ -69,6 +99,29 @@ export interface UpdatePlayerParams {
   [key: string]: unknown;
 }
 
+export interface PlayerStats {
+  player_id: string;
+  games_played: number;
+  wins: number;
+  losses: number;
+  rating: number;
+  rating_deviation: number;
+  metadata: Record<string, unknown>;
+  updated_at: string;
+}
+
+export interface PlayerIdentity {
+  id: string;
+  player_id: string;
+  provider: string;
+  provider_uid: string;
+  provider_email: string;
+  provider_display_name: string;
+  provider_metadata: Record<string, unknown>;
+  inserted_at: string;
+  updated_at: string;
+}
+
 // --- Matches ---
 
 export interface Match {
@@ -81,7 +134,6 @@ export interface Match {
 
 export interface MatchListParams {
   limit?: number;
-  offset?: number;
   status?: string;
 }
 
@@ -133,18 +185,37 @@ export interface WalletHistoryParams {
 
 export interface Transaction {
   id: string;
+  wallet_id: string;
   amount: number;
-  currency: string;
-  type: string;
-  [key: string]: unknown;
+  balance_after: number;
+  reason: string;
+  reference_type: string;
+  reference_id: string;
+  metadata: Record<string, unknown>;
+  inserted_at: string;
 }
 
-export interface StoreItem {
+export interface StoreListing {
   id: string;
-  name: string;
-  price: number;
+  item_def_id: string;
   currency: string;
-  [key: string]: unknown;
+  price: number;
+  active: boolean;
+  valid_from: string;
+  valid_until: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface ItemDef {
+  id: string;
+  slug: string;
+  name: string;
+  category: string;
+  rarity: "common" | "uncommon" | "rare" | "epic" | "legendary";
+  stackable: boolean;
+  metadata: Record<string, unknown>;
+  inserted_at: string;
+  updated_at: string;
 }
 
 export interface PurchaseParams {
@@ -173,14 +244,17 @@ export interface ConsumeParams {
 
 // --- Social ---
 
-export interface Friend {
+export interface Friendship {
+  id: string;
+  player_id: string;
   friend_id: string;
   status: string;
-  [key: string]: unknown;
+  inserted_at: string;
+  updated_at: string;
 }
 
 export interface AddFriendParams {
-  player_id: string;
+  friend_id: string;
 }
 
 export interface UpdateFriendParams {
@@ -190,12 +264,43 @@ export interface UpdateFriendParams {
 export interface Group {
   id: string;
   name: string;
-  [key: string]: unknown;
+  description?: string;
+  max_members?: number;
+  open?: boolean;
+  creator_id?: string;
+  metadata?: Record<string, unknown>;
+  inserted_at?: string;
+  updated_at?: string;
+}
+
+export interface GroupMember {
+  id: string;
+  group_id: string;
+  player_id: string;
+  role: "owner" | "admin" | "moderator" | "member";
+  joined_at: string;
+}
+
+export interface GroupMembersResponse {
+  members: GroupMember[];
 }
 
 export interface CreateGroupParams {
   name: string;
-  [key: string]: unknown;
+  description?: string;
+  max_members?: number;
+  open?: boolean;
+}
+
+export interface UpdateGroupParams {
+  name?: string;
+  description?: string;
+  max_members?: number;
+  open?: boolean;
+}
+
+export interface UpdateGroupMemberRoleParams {
+  role: "owner" | "admin" | "moderator" | "member";
 }
 
 // --- Chat ---
@@ -278,6 +383,15 @@ export interface VoteOption {
 
 // --- Worlds ---
 
+export interface PhaseInfo {
+  status: "complete" | "waiting" | "active";
+  phase: string | null;
+  start_condition?: unknown;
+  remaining_ms?: number;
+  config?: Record<string, unknown>;
+  timers?: Record<string, unknown>;
+}
+
 export interface WorldInfo {
   world_id: string;
   status: string;
@@ -286,8 +400,8 @@ export interface WorldInfo {
   max_players: number;
   grid_size?: number;
   players?: string[];
-  started_at?: number;
-  phase?: Record<string, unknown>;
+  started_at?: number | null;
+  phase?: PhaseInfo;
   [key: string]: unknown;
 }
 
@@ -310,9 +424,9 @@ export interface WorldTick {
 }
 
 export interface EntityDelta {
-  op: "a" | "u" | "r" | string;
-  id: string;
-  [key: string]: unknown;
+  op: "add" | "update" | "remove";
+  entity_id: string;
+  fields?: Record<string, unknown>;
 }
 
 export interface WorldTerrainChunk {
@@ -330,6 +444,13 @@ export interface DirectMessage {
   content: string;
   sent_at?: string;
   [key: string]: unknown;
+}
+
+export interface DMMessage {
+  sender_id: string;
+  content: string;
+  sent_at: number;
+  channel_id?: string;
 }
 
 export interface SendDmParams {
@@ -369,14 +490,9 @@ export type WsEventType =
   | "match.finished"
   | "match.joined"
   | "match.left"
-  | "match.matched"
   | "match.matchmaker_expired"
-  | "match.matchmaker_failed"
   | "match.state"
-  | "match.vote_result"
-  | "match.vote_start"
-  | "match.vote_tally"
-  | "match.vote_vetoed"
+  | `match.${string}`
   | "matchmaker.queued"
   | "matchmaker.removed"
   | "notification.new"
@@ -391,7 +507,8 @@ export type WsEventType =
   | "world.list"
   | "world.phase_changed"
   | "world.terrain"
-  | "world.tick";
+  | "world.tick"
+  | `world.${string}`;
 
 export interface TokenPair {
   accessToken?: string;

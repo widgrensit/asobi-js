@@ -38,12 +38,17 @@
     "clean": "rm -rf dist",
     "prepare": "npm run build",
     "smoke": "tsx smoke_tests/smoke.ts",
-    "test": "vitest run"
+    "test": "vitest run",
+    "lint": "eslint src"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/node": "^25.6.0",
+    "eslint": "^10.6.0",
+    "globals": "^17.7.0",
     "tsx": "^4.21.0",
     "typescript": "^5.4.0",
+    "typescript-eslint": "^8.62.1",
     "vitest": "^4.1.5"
   },
   "engines": {

@@ -33,6 +33,24 @@ export class AuthApi {
     return res;
   }
 
+  async guest(deviceId: string, deviceSecret: string): Promise<AuthResponse> {
+    const res = await this.client.post<AuthResponse>(`${PREFIX}/guest`, {
+      device_id: deviceId,
+      device_secret: deviceSecret,
+    });
+    this.client.setTokens(res.access_token, res.refresh_token);
+    return res;
+  }
+
+  async upgradeGuest(username: string, password: string): Promise<AuthResponse> {
+    const res = await this.client.post<AuthResponse>(`${PREFIX}/guest/upgrade`, {
+      username,
+      password,
+    });
+    this.client.setTokens(res.access_token, res.refresh_token);
+    return res;
+  }
+
   async refresh(): Promise<RefreshResponse> {
     const refreshToken = this.client.getRefreshToken();
     if (!refreshToken) {

@@ -17,6 +17,8 @@ export interface AuthResponse {
   refresh_token: string;
   username: string;
   created?: boolean;
+  guest?: boolean;
+  upgraded?: boolean;
 }
 
 export interface RefreshResponse {

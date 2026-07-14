@@ -63,6 +63,27 @@ ws.close();
 
 Topics (`match.state`, `world.entity_added`, etc.) are opaque to this SDK — you publish and subscribe to whatever your server emits. See the [WebSocket protocol guide](https://github.com/widgrensit/asobi/blob/main/guides/websocket-protocol.md) for the full event surface.
 
+## Guest / anonymous auth
+
+Let a player start without a signup form. Generate a device secret once (at least 32 CSPRNG bytes, base64-encoded) and persist it on the device; `guest()` creates the account on first call and resumes the same one on every call after.
+
+```ts
+import { Asobi } from "@widgrensit/asobi";
+
+const sdk = new Asobi({ baseUrl: "http://localhost:8084" });
+
+// deviceId + deviceSecret are yours to generate and persist per device.
+// deviceSecret must be >= 32 random bytes, base64-encoded.
+const session = await sdk.auth.guest(deviceId, deviceSecret);
+console.log(session.player_id, session.created); // created:true only on first call
+
+// Later, convert the guest into a full account. Uses the current session.
+const upgraded = await sdk.auth.upgradeGuest("alice", "s3cret-password");
+console.log(upgraded.upgraded); // true
+```
+
+`guest()` and `upgradeGuest()` store the returned access/refresh tokens exactly like `login()`, so the rest of the SDK is authenticated immediately.
+
 ## API
 
 ```ts

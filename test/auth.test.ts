@@ -95,7 +95,7 @@ describe("auth token pair", () => {
       guest: true,
     });
     const sdk = newSdk();
-    const res = await sdk.auth.guest("dev-1", "c2VjcmV0LWJhc2U2NA==");
+    const res = await sdk.auth.guest({ device_id: "dev-1", device_secret: "c2VjcmV0LWJhc2U2NA==" });
     expect(calls[0].url).toBe("https://api.test/api/v1/auth/guest");
     expect(calls[0].method).toBe("POST");
     expect(calls[0].headers["Authorization"]).toBeUndefined();
@@ -114,7 +114,7 @@ describe("auth token pair", () => {
       username: "alice",
       upgraded: true,
     });
-    const res = await sdk.auth.upgradeGuest("alice", "pw");
+    const res = await sdk.auth.upgradeGuest({ username: "alice", password: "pw" });
     expect(calls[0].url).toBe("https://api.test/api/v1/auth/guest/upgrade");
     expect(calls[0].method).toBe("POST");
     expect(calls[0].headers["Authorization"]).toBe("Bearer gacc");
@@ -127,7 +127,7 @@ describe("auth token pair", () => {
   it("guest surfaces backend errors as AsobiError", async () => {
     enqueue(400, { error: "weak_device_secret" });
     const sdk = newSdk();
-    await expect(sdk.auth.guest("dev-1", "short")).rejects.toBeInstanceOf(AsobiError);
+    await expect(sdk.auth.guest({ device_id: "dev-1", device_secret: "short" })).rejects.toBeInstanceOf(AsobiError);
     expect(sdk.client.getAccessToken()).toBeUndefined();
   });
 

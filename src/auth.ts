@@ -5,6 +5,8 @@ import type {
   AuthResponse,
   RefreshResponse,
   OAuthParams,
+  GuestParams,
+  GuestUpgradeParams,
   LinkProviderParams,
   UnlinkProviderParams,
   LogoutParams,
@@ -33,20 +35,14 @@ export class AuthApi {
     return res;
   }
 
-  async guest(deviceId: string, deviceSecret: string): Promise<AuthResponse> {
-    const res = await this.client.post<AuthResponse>(`${PREFIX}/guest`, {
-      device_id: deviceId,
-      device_secret: deviceSecret,
-    });
+  async guest(params: GuestParams): Promise<AuthResponse> {
+    const res = await this.client.post<AuthResponse>(`${PREFIX}/guest`, params);
     this.client.setTokens(res.access_token, res.refresh_token);
     return res;
   }
 
-  async upgradeGuest(username: string, password: string): Promise<AuthResponse> {
-    const res = await this.client.post<AuthResponse>(`${PREFIX}/guest/upgrade`, {
-      username,
-      password,
-    });
+  async upgradeGuest(params: GuestUpgradeParams): Promise<AuthResponse> {
+    const res = await this.client.post<AuthResponse>(`${PREFIX}/guest/upgrade`, params);
     this.client.setTokens(res.access_token, res.refresh_token);
     return res;
   }

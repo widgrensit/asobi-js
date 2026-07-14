@@ -74,11 +74,11 @@ const sdk = new Asobi({ baseUrl: "http://localhost:8084" });
 
 // deviceId + deviceSecret are yours to generate and persist per device.
 // deviceSecret must be >= 32 random bytes, base64-encoded.
-const session = await sdk.auth.guest(deviceId, deviceSecret);
+const session = await sdk.auth.guest({ device_id: deviceId, device_secret: deviceSecret });
 console.log(session.player_id, session.created); // created:true only on first call
 
 // Later, convert the guest into a full account. Uses the current session.
-const upgraded = await sdk.auth.upgradeGuest("alice", "s3cret-password");
+const upgraded = await sdk.auth.upgradeGuest({ username: "alice", password: "s3cret-password" });
 console.log(upgraded.upgraded); // true
 ```
 

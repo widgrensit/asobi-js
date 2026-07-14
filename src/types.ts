@@ -35,6 +35,16 @@ export interface OAuthParams {
   token: string;
 }
 
+export interface GuestParams {
+  device_id: string;
+  device_secret: string;
+}
+
+export interface GuestUpgradeParams {
+  username: string;
+  password: string;
+}
+
 export interface LinkProviderParams {
   provider: string;
   token: string;

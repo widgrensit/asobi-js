@@ -5,6 +5,8 @@ import type {
   AuthResponse,
   RefreshResponse,
   OAuthParams,
+  GuestParams,
+  GuestUpgradeParams,
   LinkProviderParams,
   UnlinkProviderParams,
   LogoutParams,
@@ -29,6 +31,18 @@ export class AuthApi {
 
   async oauth(params: OAuthParams): Promise<AuthResponse> {
     const res = await this.client.post<AuthResponse>(`${PREFIX}/oauth`, params);
+    this.client.setTokens(res.access_token, res.refresh_token);
+    return res;
+  }
+
+  async guest(params: GuestParams): Promise<AuthResponse> {
+    const res = await this.client.post<AuthResponse>(`${PREFIX}/guest`, params);
+    this.client.setTokens(res.access_token, res.refresh_token);
+    return res;
+  }
+
+  async upgradeGuest(params: GuestUpgradeParams): Promise<AuthResponse> {
+    const res = await this.client.post<AuthResponse>(`${PREFIX}/guest/upgrade`, params);
     this.client.setTokens(res.access_token, res.refresh_token);
     return res;
   }

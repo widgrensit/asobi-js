@@ -17,6 +17,8 @@ export interface AuthResponse {
   refresh_token: string;
   username: string;
   created?: boolean;
+  guest?: boolean;
+  upgraded?: boolean;
 }
 
 export interface RefreshResponse {
@@ -31,6 +33,16 @@ export interface LogoutParams {
 export interface OAuthParams {
   provider: string;
   token: string;
+}
+
+export interface GuestParams {
+  device_id: string;
+  device_secret: string;
+}
+
+export interface GuestUpgradeParams {
+  username: string;
+  password: string;
 }
 
 export interface LinkProviderParams {

@@ -85,6 +85,52 @@ describe("auth token pair", () => {
     expect(sdk.client.getRefreshToken()).toBe("r");
   });
 
+  it("guest posts device credentials and stores both tokens", async () => {
+    enqueue(200, {
+      player_id: "p1",
+      access_token: "gacc",
+      refresh_token: "gref",
+      username: "guest-1",
+      created: true,
+      guest: true,
+    });
+    const sdk = newSdk();
+    const res = await sdk.auth.guest({ device_id: "dev-1", device_secret: "c2VjcmV0LWJhc2U2NA==" });
+    expect(calls[0].url).toBe("https://api.test/api/v1/auth/guest");
+    expect(calls[0].method).toBe("POST");
+    expect(calls[0].headers["Authorization"]).toBeUndefined();
+    expect(calls[0].body).toEqual({ device_id: "dev-1", device_secret: "c2VjcmV0LWJhc2U2NA==" });
+    expect(res.guest).toBe(true);
+    expect(sdk.client.getAccessToken()).toBe("gacc");
+    expect(sdk.client.getRefreshToken()).toBe("gref");
+  });
+
+  it("upgradeGuest posts credentials with Bearer and replaces both tokens", async () => {
+    const sdk = newSdk({ accessToken: "gacc", refreshToken: "gref" });
+    enqueue(200, {
+      player_id: "p1",
+      access_token: "uacc",
+      refresh_token: "uref",
+      username: "alice",
+      upgraded: true,
+    });
+    const res = await sdk.auth.upgradeGuest({ username: "alice", password: "pw" });
+    expect(calls[0].url).toBe("https://api.test/api/v1/auth/guest/upgrade");
+    expect(calls[0].method).toBe("POST");
+    expect(calls[0].headers["Authorization"]).toBe("Bearer gacc");
+    expect(calls[0].body).toEqual({ username: "alice", password: "pw" });
+    expect(res.upgraded).toBe(true);
+    expect(sdk.client.getAccessToken()).toBe("uacc");
+    expect(sdk.client.getRefreshToken()).toBe("uref");
+  });
+
+  it("guest surfaces backend errors as AsobiError", async () => {
+    enqueue(400, { error: "weak_device_secret" });
+    const sdk = newSdk();
+    await expect(sdk.auth.guest({ device_id: "dev-1", device_secret: "short" })).rejects.toBeInstanceOf(AsobiError);
+    expect(sdk.client.getAccessToken()).toBeUndefined();
+  });
+
   it("invokes onTokens callback for persistence", async () => {
     enqueue(200, { player_id: "p1", access_token: "a", refresh_token: "r", username: "u" });
     const seen: unknown[] = [];

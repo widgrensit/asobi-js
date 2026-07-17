@@ -6,7 +6,7 @@ TypeScript client SDK for the [Asobi](https://github.com/widgrensit/asobi) game 
 
 asobi-js is a thin transport client for the asobi protocol. It connects, authenticates, encodes and decodes message frames, manages reconnection and session resume, and dispatches RPC calls and pubsub subscriptions. That's the whole library.
 
-asobi-js does not provide world or match abstractions, voting, terrain, economy, or any other game-shape helper — those are decisions your game makes, not your transport. Phaser, Three.js, and Pixi integrations live as opt-in adapters under [`examples/`](./examples/), not as a bundled API.
+asobi-js does not provide world or match abstractions, voting, terrain, economy, or any other game-shape helper — those are decisions your game makes, not your transport. Engine and framework integrations (Phaser, Three.js, Pixi) are planned as opt-in examples, not a bundled API — see [Engine and framework adapters](#engine-and-framework-adapters).
 
 Keeping the core small is deliberate: one library, one job, no surprises in your bundle, no opinions about how your game models itself. If you want game-shape primitives, write them on top of asobi-js — they are 50 lines, not a dependency.
 
@@ -17,8 +17,11 @@ Keeping the core small is deliberate: one library, one job, no surprises in your
 ## Installation
 
 ```bash
-npm install @widgrensit/asobi
+npm install github:widgrensit/asobi-js
 ```
+
+> Installs straight from GitHub and builds via the package's `prepare` script.
+> Once published, `npm install @widgrensit/asobi` will be the shorter form.
 
 > **Node 22+ required.** The SDK uses the global `WebSocket` and global `fetch`, both of which are stable in Node 22 and later. For Node 18 or 20, install [`ws`](https://www.npmjs.com/package/ws) and assign it to `globalThis.WebSocket` before importing.
 
@@ -50,8 +53,8 @@ ws.on("match.state", (payload) => {
   console.log("tick", payload.tick);
 });
 
-// Fire-and-forget pubsub publish
-ws.send("match.input", { move_x: 1, move_y: 0 });
+// Fire-and-forget pubsub publish (no reply awaited)
+ws.sendFire("match.input", { data: { move_x: 1, move_y: 0 } });
 
 // RPC: send and await a typed reply
 const reply = await ws.send("match.join", { match_id: "abc" });
@@ -91,7 +94,8 @@ new AsobiWebSocket({ url, token, reconnect?, reconnectInterval?, maxReconnectAtt
 
 ws.connect(): Promise<Record<string, unknown>>
 ws.close(): void
-ws.send(type: string, payload?: object): Promise<Record<string, unknown>>  // RPC
+ws.send(type: string, payload?: object): Promise<Record<string, unknown>>  // RPC (awaits reply)
+ws.sendFire(type: string, payload?: object): void                          // fire-and-forget
 ws.on(event: string, handler: (payload) => void): void
 ws.off(event: string, handler): void
 ```
@@ -100,13 +104,11 @@ The `"*"` event receives every frame, useful for debugging or building a custom 
 
 ## Engine and framework adapters
 
-Game-engine and framework integrations live as opt-in examples, not as bundled exports:
-
-- `examples/phaser/` — Phaser 3 helper for driving the SDK from a Scene
-- `examples/three/` — Three.js loop integration
-- `examples/pixi/` — Pixi.js loop integration
-
-(Examples are added as community contributions land.)
+Game-engine and framework integrations are intended as opt-in examples, not
+bundled exports. Planned adapters (not yet shipped) include Phaser 3, Three.js,
+and Pixi.js loop integrations; they will land under `examples/` as community
+contributions arrive. Until then, drive the SDK directly from your render loop -
+the API is small enough that no adapter is required.
 
 The REST modules under `Asobi` are the v0.x compatibility surface — the long-term direction is protocol-only (everything over `AsobiWebSocket`).
 

@@ -1,4 +1,4 @@
-// Smoke test for @asobi/client against widgrensit/sdk_demo_backend.
+// Smoke test for @widgrensit/asobi against widgrensit/sdk_demo_backend.
 //
 // Expects sdk_demo_backend running at ASOBI_URL (default http://localhost:8084)
 // with the `demo` mode loaded. See:

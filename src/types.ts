@@ -153,6 +153,12 @@ export interface Match {
 export interface MatchListParams {
   limit?: number;
   status?: string;
+  mode?: string;
+}
+
+export interface MatchLiveParams {
+  mode?: string;
+  has_capacity?: boolean;
 }
 
 // --- Matchmaker ---
@@ -180,7 +186,6 @@ export interface LeaderboardEntry {
 
 export interface LeaderboardTopParams {
   limit?: number;
-  offset?: number;
 }
 
 export interface SubmitScoreParams {

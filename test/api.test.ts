@@ -150,3 +150,73 @@ describe("EntityDelta shape", () => {
     expect(remove.fields).toBeUndefined();
   });
 });
+
+describe("list endpoints return the server envelope", () => {
+  // Every list endpoint returns {plural: [...]}, not a bare array, and
+  // AsobiClient.request returns the parsed body unmodified. These methods
+  // were typed Promise<X[]>, so the declared type was a lie and any caller
+  // doing .map()/.length on the result threw. Nothing covered the shape.
+  it("matches.list", async () => {
+    enqueue(200, { matches: [{ id: "m1", mode: "arena", status: "finished" }] });
+    const sdk = newSdk();
+    const res = await sdk.matches.list();
+    expect(res.matches).toHaveLength(1);
+    expect(Array.isArray(res)).toBe(false);
+  });
+
+  it("economy.wallets / history / store", async () => {
+    const sdk = newSdk();
+    enqueue(200, { wallets: [{ currency: "gold", balance: 10 }] });
+    expect((await sdk.economy.wallets()).wallets).toHaveLength(1);
+    enqueue(200, { transactions: [{ id: "t1" }] });
+    expect((await sdk.economy.history("gold")).transactions).toHaveLength(1);
+    enqueue(200, { listings: [{ id: "l1" }] });
+    expect((await sdk.economy.store()).listings).toHaveLength(1);
+  });
+
+  it("inventory.list", async () => {
+    enqueue(200, { items: [{ id: "i1" }] });
+    expect((await newSdk().inventory.list()).items).toHaveLength(1);
+  });
+
+  it("social.friends", async () => {
+    enqueue(200, { friends: [{ player_id: "p1", status: "accepted" }] });
+    expect((await newSdk().social.friends()).friends).toHaveLength(1);
+  });
+
+  it("leaderboards.top / around", async () => {
+    const sdk = newSdk();
+    enqueue(200, { entries: [{ player_id: "p1", score: 5 }] });
+    expect((await sdk.leaderboards.top("lb")).entries).toHaveLength(1);
+    enqueue(200, { entries: [{ player_id: "p1", score: 5 }] });
+    expect((await sdk.leaderboards.around("lb", "p1")).entries).toHaveLength(1);
+  });
+
+  it("chat.history", async () => {
+    enqueue(200, { messages: [{ id: "c1", sender_id: "p1" }] });
+    expect((await newSdk().chat.history("room:lobby")).messages).toHaveLength(1);
+  });
+
+  it("notifications.list", async () => {
+    enqueue(200, { notifications: [{ id: "n1" }] });
+    expect((await newSdk().notifications.list()).notifications).toHaveLength(1);
+  });
+
+  it("tournaments.list", async () => {
+    enqueue(200, { tournaments: [{ id: "t1" }] });
+    expect((await newSdk().tournaments.list()).tournaments).toHaveLength(1);
+  });
+
+  it("storage.listSaves / listStorage", async () => {
+    const sdk = newSdk();
+    enqueue(200, { saves: [{ slot: "1" }] });
+    expect((await sdk.storage.listSaves()).saves).toHaveLength(1);
+    enqueue(200, { objects: [{ key: "k1" }] });
+    expect((await sdk.storage.listStorage("col")).objects).toHaveLength(1);
+  });
+
+  it("votes.listByMatch", async () => {
+    enqueue(200, { votes: [{ id: "v1" }] });
+    expect((await newSdk().votes.listByMatch("m1")).votes).toHaveLength(1);
+  });
+});

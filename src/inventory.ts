@@ -1,13 +1,13 @@
 import { AsobiClient } from "./client.js";
-import type { InventoryItem, ConsumeParams } from "./types.js";
+import type { ConsumeParams, InventoryListResponse } from "./types.js";
 
 const PREFIX = "/api/v1/inventory";
 
 export class InventoryApi {
   constructor(private client: AsobiClient) {}
 
-  list(): Promise<InventoryItem[]> {
-    return this.client.get<InventoryItem[]>(PREFIX);
+  list(): Promise<InventoryListResponse> {
+    return this.client.get<InventoryListResponse>(PREFIX);
   }
 
   consume(params: ConsumeParams): Promise<Record<string, unknown>> {

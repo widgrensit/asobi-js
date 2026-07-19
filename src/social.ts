@@ -9,7 +9,7 @@ import type {
   CreateGroupParams,
   UpdateGroupParams,
   UpdateGroupMemberRoleParams,
-} from "./types.js";
+  FriendsResponse} from "./types.js";
 
 const PREFIX = "/api/v1";
 
@@ -17,8 +17,8 @@ export class SocialApi {
   constructor(private client: AsobiClient) {}
 
   // Friends
-  friends(): Promise<Friendship[]> {
-    return this.client.get<Friendship[]>(`${PREFIX}/friends`);
+  friends(): Promise<FriendsResponse> {
+    return this.client.get<FriendsResponse>(`${PREFIX}/friends`);
   }
 
   addFriend(params: AddFriendParams): Promise<Friendship> {

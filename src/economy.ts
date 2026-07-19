@@ -1,15 +1,15 @@
 import { AsobiClient } from "./client.js";
 import type {
-  Wallet,
   WalletHistoryParams,
-  Transaction,
-  StoreListing,
   PurchaseParams,
   PurchaseResult,
   IapAppleParams,
   IapGoogleParams,
   IapAppleResult,
   IapGoogleResult,
+  WalletsResponse,
+  WalletHistoryResponse,
+  StoreResponse,
 } from "./types.js";
 
 const PREFIX = "/api/v1";
@@ -17,19 +17,19 @@ const PREFIX = "/api/v1";
 export class EconomyApi {
   constructor(private client: AsobiClient) {}
 
-  wallets(): Promise<Wallet[]> {
-    return this.client.get<Wallet[]>(`${PREFIX}/wallets`);
+  wallets(): Promise<WalletsResponse> {
+    return this.client.get<WalletsResponse>(`${PREFIX}/wallets`);
   }
 
-  history(currency: string, params?: WalletHistoryParams): Promise<Transaction[]> {
-    return this.client.get<Transaction[]>(
+  history(currency: string, params?: WalletHistoryParams): Promise<WalletHistoryResponse> {
+    return this.client.get<WalletHistoryResponse>(
       `${PREFIX}/wallets/${currency}/history`,
       params as Record<string, unknown>,
     );
   }
 
-  store(): Promise<StoreListing[]> {
-    return this.client.get<StoreListing[]>(`${PREFIX}/store`);
+  store(): Promise<StoreResponse> {
+    return this.client.get<StoreResponse>(`${PREFIX}/store`);
   }
 
   purchase(params: PurchaseParams): Promise<PurchaseResult> {

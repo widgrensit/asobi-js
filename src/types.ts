@@ -140,7 +140,13 @@ export interface Match {
   id: string;
   mode: string;
   status: string;
-  players: string[];
+  /**
+   * Not returned by the REST match endpoints: `public_record/1` deliberately
+   * drops the roster so a finished match cannot be used to harvest player
+   * ids. Present on the `match.joined` WebSocket frame, where you are a
+   * member of the match.
+   */
+  players?: string[];
   [key: string]: unknown;
 }
 
@@ -244,7 +250,8 @@ export interface PurchaseResult {
 
 export interface InventoryItem {
   id: string;
-  item_id: string;
+  /** References the item definition. The column is `item_def_id`. */
+  item_def_id: string;
   quantity: number;
   [key: string]: unknown;
 }
@@ -320,7 +327,8 @@ export interface UpdateGroupMemberRoleParams {
 export interface ChatMessage {
   id: string;
   channel_id: string;
-  player_id: string;
+  /** The sender's player id. The column is `sender_id`, not `player_id`. */
+  sender_id: string;
   content: string;
   [key: string]: unknown;
 }
@@ -547,4 +555,61 @@ export interface ApiError {
   status: number;
   error?: string;
   errors?: Record<string, string[]>;
+}
+
+// --- List envelopes ---
+// Every list endpoint returns an object keyed by a plural name, not a bare
+// array. These methods were typed as arrays while the client returns the
+// parsed body unmodified, so `.map()` on the result threw at runtime.
+
+export interface MatchListResponse {
+  matches: Match[];
+}
+
+export interface WalletsResponse {
+  wallets: Wallet[];
+}
+
+export interface WalletHistoryResponse {
+  transactions: Transaction[];
+}
+
+export interface StoreResponse {
+  listings: StoreListing[];
+}
+
+export interface InventoryListResponse {
+  items: InventoryItem[];
+}
+
+export interface FriendsResponse {
+  friends: Friendship[];
+}
+
+export interface LeaderboardEntriesResponse {
+  entries: LeaderboardEntry[];
+}
+
+export interface ChatHistoryResponse {
+  messages: ChatMessage[];
+}
+
+export interface NotificationsResponse {
+  notifications: Notification[];
+}
+
+export interface TournamentsResponse {
+  tournaments: Tournament[];
+}
+
+export interface SavesResponse {
+  saves: SaveData[];
+}
+
+export interface StorageListResponse {
+  objects: StorageItem[];
+}
+
+export interface VotesResponse {
+  votes: Vote[];
 }

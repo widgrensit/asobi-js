@@ -1,5 +1,5 @@
 import { AsobiClient } from "./client.js";
-import type { SaveData, StorageItem, StorageListParams } from "./types.js";
+import type { SaveData, StorageItem, StorageListParams, SavesResponse, StorageListResponse} from "./types.js";
 
 const PREFIX = "/api/v1";
 
@@ -7,8 +7,8 @@ export class StorageApi {
   constructor(private client: AsobiClient) {}
 
   // Cloud Saves
-  listSaves(): Promise<SaveData[]> {
-    return this.client.get<SaveData[]>(`${PREFIX}/saves`);
+  listSaves(): Promise<SavesResponse> {
+    return this.client.get<SavesResponse>(`${PREFIX}/saves`);
   }
 
   getSave(slot: string): Promise<SaveData> {
@@ -20,8 +20,8 @@ export class StorageApi {
   }
 
   // Generic Storage
-  listStorage(collection: string, params?: StorageListParams): Promise<StorageItem[]> {
-    return this.client.get<StorageItem[]>(
+  listStorage(collection: string, params?: StorageListParams): Promise<StorageListResponse> {
+    return this.client.get<StorageListResponse>(
       `${PREFIX}/storage/${collection}`,
       params as Record<string, unknown>,
     );

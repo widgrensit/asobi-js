@@ -1,13 +1,13 @@
 import { AsobiClient } from "./client.js";
-import type { Tournament, TournamentListParams } from "./types.js";
+import type { Tournament, TournamentListParams, TournamentsResponse} from "./types.js";
 
 const PREFIX = "/api/v1/tournaments";
 
 export class TournamentsApi {
   constructor(private client: AsobiClient) {}
 
-  list(params?: TournamentListParams): Promise<Tournament[]> {
-    return this.client.get<Tournament[]>(PREFIX, params as Record<string, unknown>);
+  list(params?: TournamentListParams): Promise<TournamentsResponse> {
+    return this.client.get<TournamentsResponse>(PREFIX, params as Record<string, unknown>);
   }
 
   get(id: string): Promise<Tournament> {

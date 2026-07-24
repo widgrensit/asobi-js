@@ -85,4 +85,5 @@ export { StorageApi } from "./storage.js";
 export { VotesApi } from "./votes.js";
 export { WorldsApi } from "./worlds.js";
 export { DirectMessagesApi } from "./dm.js";
+export * as device from "./device.js";
 export type * from "./types.js";

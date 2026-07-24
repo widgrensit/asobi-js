@@ -1,4 +1,5 @@
 import { AsobiClient } from "./client.js";
+import { loadOrCreate } from "./device.js";
 import type {
   RegisterParams,
   LoginParams,
@@ -7,6 +8,7 @@ import type {
   OAuthParams,
   GuestParams,
   GuestUpgradeParams,
+  DeviceOptions,
   LinkProviderParams,
   UnlinkProviderParams,
   LogoutParams,
@@ -39,6 +41,14 @@ export class AuthApi {
     const res = await this.client.post<AuthResponse>(`${PREFIX}/guest`, params);
     this.client.setTokens(res.access_token, res.refresh_token);
     return res;
+  }
+
+  // Opt-in convenience: load (or generate + persist) a device keypair and sign
+  // in as a guest in one call. Equivalent to calling guest() with a
+  // {device_id, device_secret} you manage yourself. opts is forwarded to
+  // device.loadOrCreate (key/store/randomBytes/deviceId overrides).
+  async guestDevice(opts: DeviceOptions = {}): Promise<AuthResponse> {
+    return this.guest(loadOrCreate(opts));
   }
 
   async upgradeGuest(params: GuestUpgradeParams): Promise<AuthResponse> {

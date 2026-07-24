@@ -45,6 +45,34 @@ export interface GuestUpgradeParams {
   password: string;
 }
 
+// A persisted-once guest keypair. Shape-compatible with GuestParams, so it can
+// be handed straight to auth.guest(...).
+export interface DeviceCredentials {
+  device_id: string;
+  device_secret: string;
+}
+
+// Minimal localStorage-shaped persistence surface. The browser `localStorage`
+// satisfies it as-is; tests and non-browser hosts can inject their own.
+export interface DeviceStore {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+  removeItem(key: string): void;
+}
+
+export interface DeviceOptions {
+  // Storage key for the persisted pair (default "asobi.guest_device").
+  key?: string;
+  // Where to persist. Defaults to localStorage in a browser, else an in-memory
+  // store. Inject your own for a keychain, a file, or a deterministic test store.
+  store?: DeviceStore;
+  // Byte source for generation. Defaults to Web Crypto getRandomValues. Must
+  // return at least the requested number of bytes.
+  randomBytes?: (n: number) => Uint8Array;
+  // Pin the device_id explicitly instead of deriving it from random bytes.
+  deviceId?: string;
+}
+
 export interface LinkProviderParams {
   provider: string;
   token: string;

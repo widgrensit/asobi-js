@@ -87,6 +87,37 @@ console.log(upgraded.upgraded); // true
 
 `guest()` and `upgradeGuest()` store the returned access/refresh tokens exactly like `login()`, so the rest of the SDK is authenticated immediately.
 
+### Guest device (managed keypair)
+
+Don't want to hand-roll the base64 + persistence + `>= 32`-byte rule? `guestDevice()` generates the keypair once, persists it (localStorage in a browser, an in-memory store elsewhere), reuses it on every launch, and signs in — all in one call.
+
+```ts
+import { Asobi, device } from "@widgrensit/asobi";
+
+const sdk = new Asobi({ baseUrl: "http://localhost:8084" });
+
+// First call mints + saves the keypair; later calls resume the same guest.
+const session = await sdk.auth.guestDevice();
+console.log(session.player_id, session.created); // created:true only on first call
+
+// "Forget me" / switch account: erase the stored keypair so the next
+// guestDevice() mints a brand-new guest. Local-only — pair with logout().
+await sdk.auth.logout();
+device.clear();
+```
+
+`guestDevice()` is opt-in sugar over `guest()`; the raw `guest(...)` primitive with your own values keeps working. Everything is overridable through an options object, so you can store elsewhere or supply your own bytes:
+
+```ts
+await sdk.auth.guestDevice({
+  key: "mygame.guest",              // storage key (default "asobi.guest_device")
+  store: myKeychainStore,           // any { getItem, setItem, removeItem }
+  randomBytes: (n) => myCsprng(n),  // default is Web Crypto getRandomValues
+});
+```
+
+Outside a browser there is no `localStorage`, so the default store is in-memory and does **not** survive a restart — pass a `store` (file, keychain, DB) for real persistence in Node. The low-level helpers `device.generate()`, `device.loadOrCreate()`, and `device.clear()` are exported too. See [`examples/guest.ts`](examples/guest.ts).
+
 ## API
 
 ```ts

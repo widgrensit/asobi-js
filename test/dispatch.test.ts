@@ -138,8 +138,12 @@ describe("protocol dispatch", () => {
     const raw = readFileSync(join(FIXTURE_DIR, "game.error.json"), "utf8");
     const ws = newClient();
     let received: import("../src/types.js").GameErrorPayload | null = null;
+    // No cast: the `on("game.error", ...)` overload infers `payload` as
+    // GameErrorPayload directly via WsPayloadMap, so a field rename here
+    // (e.g. `callback` -> `callbackName`) fails to compile, not just to
+    // assert at runtime.
     ws.on("game.error", (payload) => {
-      received = payload as unknown as import("../src/types.js").GameErrorPayload;
+      received = payload;
     });
     feed(ws, raw);
     expect(received).toEqual({

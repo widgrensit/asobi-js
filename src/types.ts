@@ -540,6 +540,7 @@ export type WsEventType =
   | "dm.message"
   | "dm.sent"
   | "error"
+  | "game.error"
   | "match.finished"
   | "match.joined"
   | "match.left"
@@ -562,6 +563,26 @@ export type WsEventType =
   | "world.terrain"
   | "world.tick"
   | `world.${string}`;
+
+// A Lua callback error surfaced to the player whose input triggered it.
+// Dev-mode only (server gated behind ASOBI_DEV_ERRORS=true, or the
+// {asobi_lua, [{dev_errors, true}]} app env); production keeps script
+// errors server-side. Rate-limited to one notification per 1000ms per
+// bridge process, so a broken handler under a tick-rate input loop
+// yields a trickle, not a flood.
+export interface GameErrorPayload {
+  callback: string;
+  script: string;
+  message: string;
+}
+
+// Maps a WsEventType to its typed payload shape, so `on()` can return a
+// typed callback for events that have one instead of the generic
+// Record<string, unknown>. Only events with a real payload interface
+// need an entry here.
+export interface WsPayloadMap {
+  "game.error": GameErrorPayload;
+}
 
 export interface TokenPair {
   accessToken?: string;

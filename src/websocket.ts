@@ -1,4 +1,4 @@
-import type { AsobiWebSocketOptions, WsMessage, WsEventType } from "./types.js";
+import type { AsobiWebSocketOptions, WsMessage, WsEventType, WsPayloadMap } from "./types.js";
 
 type WsCallback = (payload: Record<string, unknown>) => void;
 type CidResolver = {
@@ -130,12 +130,17 @@ export class AsobiWebSocket {
     this.ws?.send(JSON.stringify(msg));
   }
 
-  on(event: WsEventType | string, callback: WsCallback): () => void {
+  on<K extends keyof WsPayloadMap>(
+    event: K,
+    callback: (payload: WsPayloadMap[K]) => void,
+  ): () => void;
+  on(event: WsEventType | (string & {}), callback: WsCallback): () => void;
+  on(event: string, callback: WsCallback): () => void {
     if (!this.listeners.has(event)) {
       this.listeners.set(event, new Set());
     }
-    this.listeners.get(event)!.add(callback);
-    return () => this.listeners.get(event)?.delete(callback);
+    this.listeners.get(event)!.add(callback as WsCallback);
+    return () => this.listeners.get(event)?.delete(callback as WsCallback);
   }
 
   off(event: string, callback: WsCallback): void {

@@ -22,6 +22,7 @@ const EXPECTED: ReadonlySet<string> = new Set([
   "dm.sent",
   "error",
   "game.error",
+  "game.message",
   "match.finished",
   "match.joined",
   "match.left",
@@ -110,6 +111,7 @@ describe("protocol dispatch", () => {
       "dm.sent",
       "error",
       "game.error",
+      "game.message",
       "match.finished",
       "match.joined",
       "match.left",
@@ -151,5 +153,38 @@ describe("protocol dispatch", () => {
       script: "match.lua",
       message: "bad arithmetic + on nil, 1",
     });
+  });
+
+  it("game.message carries the typed message field (string)", () => {
+    const raw = readFileSync(join(FIXTURE_DIR, "game.message.json"), "utf8");
+    const ws = newClient();
+    let received: import("../src/types.js").GameMessagePayload | null = null;
+    // No cast: the `on("game.message", ...)` overload infers `payload` as
+    // GameMessagePayload directly via WsPayloadMap.
+    ws.on("game.message", (payload) => {
+      received = payload;
+    });
+    feed(ws, raw);
+    expect(received).toEqual({ message: "jij bent speler nummer 3" });
+  });
+
+  it("game.message does not assume message is a string (number/object)", () => {
+    const ws = newClient();
+    const received: import("../src/types.js").GameMessagePayload[] = [];
+    ws.on("game.message", (payload) => {
+      received.push(payload);
+    });
+    feed(ws, JSON.stringify({ type: "game.message", payload: { message: 3 } }));
+    feed(
+      ws,
+      JSON.stringify({
+        type: "game.message",
+        payload: { message: { player_number: 3, ready: true } },
+      }),
+    );
+    expect(received).toEqual([
+      { message: 3 },
+      { message: { player_number: 3, ready: true } },
+    ]);
   });
 });

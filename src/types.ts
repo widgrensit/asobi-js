@@ -541,6 +541,7 @@ export type WsEventType =
   | "dm.sent"
   | "error"
   | "game.error"
+  | "game.message"
   | "match.finished"
   | "match.joined"
   | "match.left"
@@ -576,12 +577,21 @@ export interface GameErrorPayload {
   message: string;
 }
 
+// Server-push event for game.send(player_id, message) calls from Lua.
+// Unlike game.error, this fires unconditionally in production. `message`
+// is whatever value the script passed: a string, a number, or a
+// JSON object/array, so it is typed `unknown` rather than `string`.
+export interface GameMessagePayload {
+  message: unknown;
+}
+
 // Maps a WsEventType to its typed payload shape, so `on()` can return a
 // typed callback for events that have one instead of the generic
 // Record<string, unknown>. Only events with a real payload interface
 // need an entry here.
 export interface WsPayloadMap {
   "game.error": GameErrorPayload;
+  "game.message": GameMessagePayload;
 }
 
 export interface TokenPair {

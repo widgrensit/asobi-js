@@ -1,4 +1,12 @@
-import type { AsobiWebSocketOptions, WsMessage, WsEventType, WsPayloadMap } from "./types.js";
+import type {
+  AsobiWebSocketOptions,
+  WsMessage,
+  WsEventType,
+  WsPayloadMap,
+  SendFireOptions,
+  MatchState,
+  Entity,
+} from "./types.js";
 
 type WsCallback = (payload: Record<string, unknown>) => void;
 type CidResolver = {
@@ -12,6 +20,62 @@ const AUTH_FAILURE_REASONS: ReadonlySet<string> = new Set([
   "session_revoked",
   "idle_auth_timeout",
 ]);
+
+// Recursive structural equality over JSON-shaped values (what every WS
+// payload is). Deliberately not `JSON.stringify` comparison: key insertion
+// order on an otherwise-unchanged object (e.g. `{y, x}` one frame, `{x, y}`
+// the next) would falsely compare unequal and defeat sendFire's dedupe.
+function deepEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) {
+    return false;
+  }
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return (
+      Array.isArray(a) &&
+      Array.isArray(b) &&
+      a.length === b.length &&
+      a.every((v, i) => deepEqual(v, b[i]))
+    );
+  }
+  const aRec = a as Record<string, unknown>;
+  const bRec = b as Record<string, unknown>;
+  const aKeys = Object.keys(aRec);
+  const bKeys = Object.keys(bRec);
+  return aKeys.length === bKeys.length && aKeys.every((k) => deepEqual(aRec[k], bRec[k]));
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function toEntity(fields: unknown, fallbackId: string): Entity {
+  if (isPlainObject(fields)) {
+    const id = typeof fields.id === "string" ? fields.id : fallbackId;
+    return { ...fields, id };
+  }
+  return { id: fallbackId };
+}
+
+// Best-effort: the `match.state` wire payload has no fixed schema (it is
+// whatever the game's `get_state` callback returns), so this looks for the
+// two conventions asobi games actually use for a per-id state map -
+// `entities` or `players` - as either a JSON object keyed by id or an array
+// of state objects. Anything else yields an empty `entities`; `raw` always
+// carries the untouched payload regardless.
+function toMatchState<T>(payload: Record<string, unknown>): MatchState<T> {
+  const tick = typeof payload.tick === "number" ? payload.tick : 0;
+  const source = "entities" in payload ? payload.entities : payload.players;
+
+  let entities: Entity[] = [];
+  if (Array.isArray(source)) {
+    entities = source.map((item, i) => toEntity(item, String(i)));
+  } else if (isPlainObject(source)) {
+    entities = Object.entries(source).map(([id, fields]) => toEntity(fields, id));
+  }
+
+  return { tick, entities, raw: payload as T };
+}
 
 export class AsobiWebSocket {
   private readonly url: string;
@@ -29,6 +93,8 @@ export class AsobiWebSocket {
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private closed = false;
   private authExpired = false;
+  private lastFirePayloads = new Map<string, Record<string, unknown>>();
+  private warnedDroppedSend = false;
 
   constructor(options: AsobiWebSocketOptions) {
     this.url = options.url;
@@ -47,6 +113,8 @@ export class AsobiWebSocket {
 
       this.ws.onopen = () => {
         this.reconnectAttempts = 0;
+        this.warnedDroppedSend = false;
+        this.lastFirePayloads.clear();
         this.startHeartbeat();
         this.authenticate()
           .then(resolve)
@@ -125,9 +193,43 @@ export class AsobiWebSocket {
     });
   }
 
-  sendFire(type: string, payload: Record<string, unknown> = {}): void {
+  // Fire-and-forget publish - no reply awaited. This is the primitive used
+  // for a per-frame send loop (e.g. match input), so it takes two
+  // frame-loop-specific affordances:
+  //
+  // - `dedupe`: drop the send if `payload` is structurally equal to the
+  //   last payload actually sent for this `type`. See `deepEqual`.
+  // - Dropped-while-not-open sends warn once (via `console.warn`) instead
+  //   of failing silently forever. A naive 60fps integration that starts
+  //   sending before `connect()` resolves used to have no signal at all
+  //   that its input was going nowhere; the warning resets on every
+  //   (re)connect so it can fire again after a dropped connection. Kept as
+  //   a single warning rather than a throw or a buffer so existing
+  //   callers that don't check `connect()` timing keep working unchanged.
+  sendFire(type: string, payload: Record<string, unknown> = {}, options?: SendFireOptions): void {
+    if (options?.dedupe) {
+      const last = this.lastFirePayloads.get(type);
+      if (last !== undefined && deepEqual(last, payload)) {
+        return;
+      }
+    }
+
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      if (!this.warnedDroppedSend) {
+        this.warnedDroppedSend = true;
+        console.warn(
+          `[asobi] sendFire("${type}") dropped: WebSocket is not open (has connect() resolved?). ` +
+            "This warning fires once per connection.",
+        );
+      }
+      return;
+    }
+
     const msg: WsMessage = { type, payload };
-    this.ws?.send(JSON.stringify(msg));
+    this.ws.send(JSON.stringify(msg));
+    if (options?.dedupe) {
+      this.lastFirePayloads.set(type, payload);
+    }
   }
 
   on<K extends keyof WsPayloadMap>(
@@ -145,6 +247,16 @@ export class AsobiWebSocket {
 
   off(event: string, callback: WsCallback): void {
     this.listeners.get(event)?.delete(callback);
+  }
+
+  // Typed convenience over `on("match.state", ...)`. See `MatchState` and
+  // `toMatchState` for how `tick`/`entities` are derived from the
+  // otherwise-game-defined payload; `T` types `raw`, the untouched payload,
+  // for reading game-specific fields the typed view doesn't capture.
+  onMatchState<T = unknown>(callback: (state: MatchState<T>) => void): () => void {
+    return this.on("match.state", (payload) => {
+      callback(toMatchState<T>(payload));
+    });
   }
 
   private handleMessage(raw: string): void {

@@ -540,6 +540,7 @@ export type WsEventType =
   | "dm.message"
   | "dm.sent"
   | "error"
+  | "game.error"
   | "match.finished"
   | "match.joined"
   | "match.left"
@@ -562,6 +563,15 @@ export type WsEventType =
   | "world.terrain"
   | "world.tick"
   | `world.${string}`;
+
+// A Lua callback error surfaced to the player whose input triggered it.
+// Dev-mode only (server gated behind ASOBI_DEV_ERRORS=true); production
+// keeps script errors server-side.
+export interface GameErrorPayload {
+  callback: string;
+  script: string;
+  message: string;
+}
 
 export interface TokenPair {
   accessToken?: string;

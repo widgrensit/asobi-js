@@ -21,6 +21,7 @@ const EXPECTED: ReadonlySet<string> = new Set([
   "dm.message",
   "dm.sent",
   "error",
+  "game.error",
   "match.finished",
   "match.joined",
   "match.left",
@@ -108,6 +109,7 @@ describe("protocol dispatch", () => {
       "dm.message",
       "dm.sent",
       "error",
+      "game.error",
       "match.finished",
       "match.joined",
       "match.left",
@@ -130,5 +132,20 @@ describe("protocol dispatch", () => {
       "world.tick",
     ];
     expect(_typed.length).toBe(EXPECTED.size);
+  });
+
+  it("game.error carries the typed callback/script/message fields", () => {
+    const raw = readFileSync(join(FIXTURE_DIR, "game.error.json"), "utf8");
+    const ws = newClient();
+    let received: import("../src/types.js").GameErrorPayload | null = null;
+    ws.on("game.error", (payload) => {
+      received = payload as unknown as import("../src/types.js").GameErrorPayload;
+    });
+    feed(ws, raw);
+    expect(received).toEqual({
+      callback: "handle_input",
+      script: "match.lua",
+      message: "bad arithmetic + on nil, 1",
+    });
   });
 });

@@ -487,6 +487,31 @@ export interface WorldTerrainChunk {
   data: string;
 }
 
+// --- Match state (typed convenience over `match.state`) ---
+
+// A single tracked thing in a match's shared state: a player, an NPC, a
+// projectile, whatever the game's state callback keys by id. The
+// `match.state` wire payload is entirely game-defined (asobi's game module
+// `get_state/1` or `get_state/2` callback returns an arbitrary map), so
+// beyond `id` every field is a passthrough from the game.
+export interface Entity {
+  id: string;
+  [key: string]: unknown;
+}
+
+// Typed convenience view over a `match.state` frame, built by
+// `AsobiWebSocket.onMatchState()`. `entities` is derived on a best-effort
+// basis from a `players`- or `entities`-keyed map/array on the payload (see
+// `toMatchState` in websocket.ts) since the wire shape has no fixed schema;
+// `raw` is the untouched payload, so a game with its own state shape
+// (score, phase, custom round data, ...) is never blocked on this helper.
+// Mirrors the `MatchState.raw` escape hatch already shipped in asobi-dart.
+export interface MatchState<T = unknown> {
+  tick: number;
+  entities: Entity[];
+  raw: T;
+}
+
 // --- Direct messages ---
 
 export interface DirectMessage {
@@ -613,6 +638,17 @@ export interface AsobiWebSocketOptions {
   reconnectInterval?: number;
   maxReconnectAttempts?: number;
   heartbeatInterval?: number;
+}
+
+export interface SendFireOptions {
+  // Skip this send if its payload is structurally equal to the last payload
+  // sent for the same `type`. Guards a per-frame send loop (e.g. driving
+  // match input at 60fps) against flooding the socket with duplicates when
+  // nothing changed. Only sends that actually reach an open socket count as
+  // "last sent" — a send dropped because the socket wasn't open (see
+  // `sendFire`) never counts, so the first payload after a (re)connect
+  // always goes out.
+  dedupe?: boolean;
 }
 
 export interface ApiError {

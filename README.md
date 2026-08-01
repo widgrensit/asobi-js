@@ -53,8 +53,21 @@ ws.on("match.state", (payload) => {
   console.log("tick", payload.tick);
 });
 
+// Typed convenience over the same event: derives `tick`/`entities` on a
+// best-effort basis (your game's `get_state` payload has no fixed shape),
+// and gives you a generic `raw` escape hatch for the rest.
+ws.onMatchState<{ score: number }>((state) => {
+  state.entities;    // Entity[] - typed
+  state.raw.score;   // your game-specific fields
+});
+
 // Fire-and-forget pubsub publish (no reply awaited)
 ws.sendFire("match.input", { data: { move_x: 1, move_y: 0 } });
+
+// Driving input from a render loop (e.g. 60fps): `dedupe` skips the send
+// when the payload is structurally identical to the last one actually
+// sent, so an idle player doesn't flood the socket every frame.
+ws.sendFire("match.input", { move_x: 1, move_y: 0 }, { dedupe: true });
 
 // RPC: send and await a typed reply
 const reply = await ws.send("match.join", { match_id: "abc" });
@@ -65,6 +78,8 @@ ws.close();
 ```
 
 Topics (`match.state`, `world.entity_added`, etc.) are opaque to this SDK — you publish and subscribe to whatever your server emits. See the [WebSocket protocol guide](https://github.com/widgrensit/asobi/blob/main/guides/websocket-protocol.md) for the full event surface.
+
+**`sendFire` drops the send and warns if the socket isn't open.** If you call `sendFire` before `connect()` resolves (or after a drop, before it reconnects), the send is silently discarded — same as before — but the SDK now also prints one `console.warn` per connection so this doesn't cost you 20 minutes of "why isn't the server seeing my input." Wire up `await ws.connect()` before you start your render loop, or gate sends on your own "connected" flag, to avoid it entirely.
 
 ## Guest / anonymous auth
 
@@ -125,9 +140,10 @@ new AsobiWebSocket({ url, token, reconnect?, reconnectInterval?, maxReconnectAtt
 
 ws.connect(): Promise<Record<string, unknown>>
 ws.close(): void
-ws.send(type: string, payload?: object): Promise<Record<string, unknown>>  // RPC (awaits reply)
-ws.sendFire(type: string, payload?: object): void                          // fire-and-forget
+ws.send(type: string, payload?: object): Promise<Record<string, unknown>>              // RPC (awaits reply)
+ws.sendFire(type: string, payload?: object, options?: { dedupe?: boolean }): void      // fire-and-forget
 ws.on(event: string, handler: (payload) => void): void
+ws.onMatchState<T>(handler: (state: MatchState<T>) => void): void                      // typed match.state
 ws.off(event: string, handler): void
 ```
 

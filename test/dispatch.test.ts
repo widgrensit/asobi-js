@@ -168,23 +168,57 @@ describe("protocol dispatch", () => {
     expect(received).toEqual({ message: "jij bent speler nummer 3" });
   });
 
-  it("game.message does not assume message is a string (number/object)", () => {
-    const ws = newClient();
-    const received: import("../src/types.js").GameMessagePayload[] = [];
-    ws.on("game.message", (payload) => {
-      received.push(payload);
+  // Every shape below is production-reachable per asobi_lua_api:to_storage_value/1
+  // in asobi_lua: integer-keyed Lua tables become JSON arrays, and `nil` (or
+  // any unsupported Lua value, e.g. a function reference) becomes JSON null.
+  const NON_STRING_MESSAGES: ReadonlyArray<{ label: string; message: unknown }> = [
+    { label: "number", message: 3 },
+    { label: "object", message: { player_number: 3, ready: true } },
+    { label: "array", message: ["a", "b"] },
+    { label: "null", message: null },
+  ];
+
+  for (const { label, message } of NON_STRING_MESSAGES) {
+    it(`game.message does not assume message is a string (${label})`, () => {
+      const ws = newClient();
+      let received: import("../src/types.js").GameMessagePayload | null = null;
+      ws.on("game.message", (payload) => {
+        received = payload;
+      });
+      feed(ws, JSON.stringify({ type: "game.message", payload: { message } }));
+      expect(received).toEqual({ message });
     });
-    feed(ws, JSON.stringify({ type: "game.message", payload: { message: 3 } }));
-    feed(
-      ws,
-      JSON.stringify({
-        type: "game.message",
-        payload: { message: { player_number: 3, ready: true } },
-      }),
-    );
-    expect(received).toEqual([
-      { message: 3 },
-      { message: { player_number: 3, ready: true } },
-    ]);
-  });
+  }
 });
+
+// Compile-time probe: `GameMessagePayload.message` must stay `unknown`.
+// Regressing it to `string`, `any`, or a narrower union (e.g. `number |
+// string`) would still pass every runtime assertion above, so this is the
+// only thing that catches such a regression - the module fails to compile
+// (see tsconfig.test.json) instead. Module-scope, not inside an `it`, since
+// both checks below are compile-time constructs, not runtime assertions.
+{
+  const ws = newClient();
+  ws.on("game.message", (payload) => {
+    // @ts-expect-error `message` is `unknown`: consumers must narrow before
+    // use. Catches a regression to `string` or `any` - either would make
+    // this line compile, leaving the directive unused (TS2578).
+    payload.message.toUpperCase();
+  });
+  const numeric: import("../src/types.js").GameMessagePayload = { message: 3 };
+  void numeric;
+
+  // Catches a regression to a narrower union (e.g. `number | string`) that
+  // the `@ts-expect-error` above can't: calling `.toUpperCase()` on a
+  // `number | string` union is already a real error unrelated to `unknown`,
+  // so the directive above would stay satisfied either way. `Exactly<T, U>`
+  // is `true` only when `T` and `U` are mutually assignable.
+  type Exactly<T, U> = [T] extends [U] ? ([U] extends [T] ? true : false)
+    : false;
+  type MessageIsUnknown = Exactly<
+    import("../src/types.js").GameMessagePayload["message"],
+    unknown
+  >;
+  const messageIsUnknown: MessageIsUnknown = true;
+  void messageIsUnknown;
+}

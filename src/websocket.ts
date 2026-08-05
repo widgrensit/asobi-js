@@ -77,6 +77,21 @@ function toMatchState<T>(payload: Record<string, unknown>): MatchState<T> {
   return { tick, entities, raw: payload as T };
 }
 
+// An extension's RPC handler answered `rpc.error`. The code is the machine
+// -readable half and is what you branch on; the message is prose for a human
+// and may change without notice.
+export class AsobiRpcError extends Error {
+  readonly code: string;
+  readonly details: Record<string, unknown>;
+
+  constructor(code: string, message: string, details: Record<string, unknown>) {
+    super(message || code);
+    this.name = "AsobiRpcError";
+    this.code = code;
+    this.details = details;
+  }
+}
+
 export class AsobiWebSocket {
   private readonly url: string;
   private token: string;
@@ -193,6 +208,28 @@ export class AsobiWebSocket {
     });
   }
 
+  // Call an extension's RPC method and await its reply.
+  //
+  //   const { reward } = await ws.rpc("quests.claim", { quest_key: "daily" });
+  //
+  // The server correlates the reply by `cid` exactly as it does for every
+  // other request, so this is `send` plus the rpc.call envelope: `protocol`
+  // versions the payload rather than the frame type, and both `params` and
+  // `result` are always objects so either can grow a field without breaking
+  // a shipped client.
+  //
+  // Rejects with `AsobiRpcError` when the handler answers `rpc.error`, so a
+  // domain outcome (`quests.already_claimed`) is catchable by code rather
+  // than by matching on a message.
+  async rpc(
+    method: string,
+    params: Record<string, unknown> = {},
+  ): Promise<Record<string, unknown>> {
+    const payload = await this.send("rpc.call", { protocol: 1, method, params });
+    const result = payload.result;
+    return (result ?? {}) as Record<string, unknown>;
+  }
+
   // Fire-and-forget publish - no reply awaited. This is the primitive used
   // for a per-frame send loop (e.g. match input), so it takes two
   // frame-loop-specific affordances:
@@ -272,7 +309,19 @@ export class AsobiWebSocket {
       this.pendingReplies.delete(msg.cid);
       clearTimeout(pending.timer);
 
-      if (msg.type === "error") {
+      if (msg.type === "rpc.error") {
+        // The shared error object: {code, message, details}. Rejecting with
+        // the generic Error here would throw away the code, which is the
+        // only part of it a caller can branch on.
+        const error = (msg.payload.error ?? {}) as Record<string, unknown>;
+        pending.reject(
+          new AsobiRpcError(
+            String(error.code ?? "internal"),
+            String(error.message ?? ""),
+            (error.details ?? {}) as Record<string, unknown>,
+          ),
+        );
+      } else if (msg.type === "error") {
         pending.reject(new Error(String(msg.payload.reason ?? "unknown_error")));
       } else {
         pending.resolve(msg.payload);

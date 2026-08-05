@@ -69,7 +69,7 @@ export class Asobi {
 }
 
 export { AsobiClient, AsobiError, AsobiAuthExpiredError } from "./client.js";
-export { AsobiWebSocket } from "./websocket.js";
+export { AsobiWebSocket, AsobiRpcError } from "./websocket.js";
 export { AuthApi } from "./auth.js";
 export { PlayersApi } from "./players.js";
 export { MatchesApi } from "./matches.js";

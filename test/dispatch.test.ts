@@ -231,7 +231,10 @@ describe("protocol dispatch", () => {
     // this line compile, leaving the directive unused (TS2578).
     payload.message.toUpperCase();
   });
-  const numeric: import("../src/types.js").GameMessagePayload = { message: 3 };
+  const numeric: import("../src/types.js").GameMessagePayload = {
+    module: "lua",
+    message: 3,
+  };
   void numeric;
 
   // Catches a regression to a narrower union (e.g. `number | string`) that

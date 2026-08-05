@@ -26,12 +26,23 @@ const EXPECTED: ReadonlySet<string> = new Set([
   "match.finished",
   "match.joined",
   "match.left",
+  "match.list",
+  "match.matched",
   "match.matchmaker_expired",
+  "match.matchmaker_failed",
   "match.state",
+  "match.vote_result",
+  "match.vote_start",
+  "match.vote_tally",
+  "match.vote_vetoed",
   "matchmaker.queued",
   "matchmaker.removed",
+  "module.error",
+  "module.message",
   "notification.new",
   "presence.updated",
+  "rpc.error",
+  "rpc.ok",
   "session.connected",
   "session.heartbeat",
   "vote.cast_ok",
@@ -115,12 +126,23 @@ describe("protocol dispatch", () => {
       "match.finished",
       "match.joined",
       "match.left",
+      "match.list",
+      "match.matched",
       "match.matchmaker_expired",
+      "match.matchmaker_failed",
       "match.state",
+      "match.vote_result",
+      "match.vote_start",
+      "match.vote_tally",
+      "match.vote_vetoed",
       "matchmaker.queued",
       "matchmaker.removed",
+      "module.error",
+      "module.message",
       "notification.new",
       "presence.updated",
+      "rpc.error",
+      "rpc.ok",
       "session.connected",
       "session.heartbeat",
       "vote.cast_ok",
@@ -149,6 +171,7 @@ describe("protocol dispatch", () => {
     });
     feed(ws, raw);
     expect(received).toEqual({
+      module: "lua",
       callback: "handle_input",
       script: "match.lua",
       message: "bad arithmetic + on nil, 1",
@@ -165,7 +188,10 @@ describe("protocol dispatch", () => {
       received = payload;
     });
     feed(ws, raw);
-    expect(received).toEqual({ message: "jij bent speler nummer 3" });
+    expect(received).toEqual({
+      module: "lua",
+      message: "jij bent speler nummer 3",
+    });
   });
 
   // Every shape below is production-reachable per asobi_lua_api:to_storage_value/1

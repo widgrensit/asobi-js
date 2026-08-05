@@ -567,16 +567,27 @@ export type WsEventType =
   | "error"
   | "game.error"
   | "game.message"
+  | "module.error"
+  | "module.message"
   | "match.finished"
   | "match.joined"
   | "match.left"
+  | "match.list"
+  | "match.matched"
   | "match.matchmaker_expired"
+  | "match.matchmaker_failed"
   | "match.state"
+  | "match.vote_result"
+  | "match.vote_start"
+  | "match.vote_tally"
+  | "match.vote_vetoed"
   | `match.${string}`
   | "matchmaker.queued"
   | "matchmaker.removed"
   | "notification.new"
   | "presence.updated"
+  | "rpc.error"
+  | "rpc.ok"
   | "session.connected"
   | "session.heartbeat"
   | "vote.cast_ok"
@@ -597,6 +608,10 @@ export type WsEventType =
 // bridge process, so a broken handler under a tick-rate input loop
 // yields a trickle, not a flood.
 export interface GameErrorPayload {
+  // Which module raised it. The server renamed these frames
+  // game.* -> module.* so a second scripting runtime could use them, and
+  // carries this field on both names.
+  module: string;
   callback: string;
   script: string;
   message: string;
@@ -607,6 +622,7 @@ export interface GameErrorPayload {
 // is whatever value the script passed: a string, a number, or a
 // JSON object/array, so it is typed `unknown` rather than `string`.
 export interface GameMessagePayload {
+  module: string;
   message: unknown;
 }
 
@@ -617,6 +633,10 @@ export interface GameMessagePayload {
 export interface WsPayloadMap {
   "game.error": GameErrorPayload;
   "game.message": GameMessagePayload;
+  // The same two frames under their current names. `game.*` is the
+  // deprecated alias the server still emits; both carry `module`.
+  "module.error": GameErrorPayload;
+  "module.message": GameMessagePayload;
 }
 
 export interface TokenPair {

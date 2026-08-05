@@ -140,7 +140,8 @@ new AsobiWebSocket({ url, token, reconnect?, reconnectInterval?, maxReconnectAtt
 
 ws.connect(): Promise<Record<string, unknown>>
 ws.close(): void
-ws.send(type: string, payload?: object): Promise<Record<string, unknown>>              // RPC (awaits reply)
+ws.send(type: string, payload?: object): Promise<Record<string, unknown>>              // request/reply
+ws.rpc(method: string, params?: object): Promise<Record<string, unknown>>              // call an extension
 ws.sendFire(type: string, payload?: object, options?: { dedupe?: boolean }): void      // fire-and-forget
 ws.on(event: string, handler: (payload) => void): void
 ws.onMatchState<T>(handler: (state: MatchState<T>) => void): void                      // typed match.state
@@ -148,6 +149,25 @@ ws.off(event: string, handler): void
 ```
 
 The `"*"` event receives every frame, useful for debugging or building a custom dispatcher.
+
+### Calling an extension
+
+An asobi extension declares RPC methods that a client reaches by name:
+
+```ts
+try {
+  const { reward } = await ws.rpc("quests.claim", { quest_key: "daily_kills" });
+} catch (e) {
+  if (e instanceof AsobiRpcError && e.code === "quests.already_claimed") {
+    // An ordinary outcome, not a failure. Branch on `code`; `message` is
+    // prose for a human and may change.
+  }
+}
+```
+
+Replies are correlated by `cid`, so concurrent calls are safe and may answer
+out of order. `params` and the returned `result` are always objects, so either
+can grow a field without breaking a shipped client.
 
 ## Engine and framework adapters
 

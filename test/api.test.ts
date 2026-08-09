@@ -220,3 +220,38 @@ describe("list endpoints return the server envelope", () => {
     expect((await newSdk().votes.listByMatch("m1")).votes).toHaveLength(1);
   });
 });
+
+// The route the SDK could not reach until asobi#419: erasing your own account
+// without an operator secret. What matters here is not that a POST is sent, but
+// that the local token pair survives a refusal and does not survive a success.
+describe("erasing your own account", () => {
+  it("posts to /players/me/erase and clears the local tokens", async () => {
+    enqueue(200, { deleted: true });
+    const sdk = newSdk();
+    await sdk.players.eraseSelf();
+    expect(calls[0].url).toBe("https://api.test/api/v1/players/me/erase");
+    expect(calls[0].method).toBe("POST");
+    expect(calls[0].body).toEqual({});
+    expect(sdk.client.getRefreshToken()).toBeUndefined();
+  });
+
+  it("sends the password for an account that has one", async () => {
+    enqueue(200, { deleted: true });
+    const sdk = newSdk();
+    await sdk.players.eraseSelf({ password: "secret123" });
+    expect(calls[0].body).toEqual({ password: "secret123" });
+  });
+
+  // A wrong password leaves a live account. Clearing tokens here would sign the
+  // player out of an account that still exists, which is why this is not the
+  // `finally` that logout uses. The server answers 403 rather than 401 so this
+  // never reaches the refresh-and-replay path either - one request, no rotation,
+  // and no replay of a destructive call.
+  it("keeps the session when the password is refused", async () => {
+    enqueue(403, { error: { code: "player.confirmation_failed", message: "no", details: {} } });
+    const sdk = new Asobi({ baseUrl: "https://api.test", accessToken: "acc", refreshToken: "ref" });
+    await expect(sdk.players.eraseSelf({ password: "wrong" })).rejects.toThrow();
+    expect(sdk.client.getRefreshToken()).toBe("ref");
+    expect(calls.length).toBe(1);
+  });
+});

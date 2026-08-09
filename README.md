@@ -102,6 +102,21 @@ console.log(upgraded.upgraded); // true
 
 `guest()` and `upgradeGuest()` store the returned access/refresh tokens exactly like `login()`, so the rest of the SDK is authenticated immediately.
 
+### Deleting an account
+
+`eraseSelf()` erases the signed-in player and everything the server holds for them. Irreversible.
+
+```ts
+await sdk.players.eraseSelf();                          // guest or provider-only account
+await sdk.players.eraseSelf({ password: "s3cret-password" }); // account with a password
+```
+
+Pass `password` only for an account that has one — a guest has no credential to re-present, so its session is the confirmation. A wrong password is a `403` (`player.confirmation_failed`) and changes nothing.
+
+On success the SDK clears its tokens, because the server deleted them in the same transaction. Calling anything afterwards on that session is a `401`, which for a retried erase means it already worked.
+
+Requires a server with `POST /api/v1/players/me/erase`. Older deployments answer `404`.
+
 ### Guest device (managed keypair)
 
 Don't want to hand-roll the base64 + persistence + `>= 32`-byte rule? `guestDevice()` generates the keypair once, persists it (localStorage in a browser, an in-memory store elsewhere), reuses it on every launch, and signs in — all in one call.

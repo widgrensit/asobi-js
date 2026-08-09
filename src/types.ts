@@ -134,6 +134,12 @@ export interface Player {
   [key: string]: unknown;
 }
 
+// `password` is required only for an account that has one. Omit it for a guest
+// or a provider-only account - there is no credential to echo.
+export interface EraseAccountParams {
+  password?: string;
+}
+
 export interface UpdatePlayerParams {
   display_name?: string;
   [key: string]: unknown;

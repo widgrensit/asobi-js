@@ -1,5 +1,9 @@
 import { AsobiClient } from "./client.js";
-import type { MatchmakerAddParams, MatchmakerTicket } from "./types.js";
+import type {
+  MatchmakerAddParams,
+  MatchmakerTicket,
+  MatchmakerTicketStatus,
+} from "./types.js";
 
 const PREFIX = "/api/v1/matchmaker";
 
@@ -10,8 +14,8 @@ export class MatchmakerApi {
     return this.client.post<MatchmakerTicket>(PREFIX, params);
   }
 
-  status(ticketId: string): Promise<MatchmakerTicket> {
-    return this.client.get<MatchmakerTicket>(`${PREFIX}/${ticketId}`);
+  status(ticketId: string): Promise<MatchmakerTicketStatus> {
+    return this.client.get<MatchmakerTicketStatus>(`${PREFIX}/${ticketId}`);
   }
 
   remove(ticketId: string): Promise<void> {

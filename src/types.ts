@@ -193,6 +193,24 @@ export interface MatchListParams {
 export interface MatchLiveParams {
   mode?: string;
   has_capacity?: boolean;
+  /** Filters on the match's own joinable flag. Sent as "true"/"false". */
+  joinable?: boolean;
+}
+
+/**
+ * An entry of `GET /api/v1/matches/live` (and of the `match.list` WebSocket
+ * reply). The live lobby serves `listing_info/1`, a whitelist projection that
+ * keys the match on `match_id` and drops the roster - `id` is never present.
+ */
+export interface MatchListing {
+  match_id: string;
+  status: string;
+  player_count: number;
+  max_players: number;
+  mode?: string;
+  joinable?: boolean;
+  phase?: PhaseInfo;
+  [key: string]: unknown;
 }
 
 // --- Matchmaker ---
@@ -200,13 +218,25 @@ export interface MatchLiveParams {
 export interface MatchmakerAddParams {
   mode?: string;
   properties?: Record<string, unknown>;
-  party?: string[];
 }
 
+/** The `POST /api/v1/matchmaker` reply, and the `matchmaker.queued` frame. */
 export interface MatchmakerTicket {
   ticket_id: string;
   status: string;
   [key: string]: unknown;
+}
+
+/**
+ * The `GET /api/v1/matchmaker/:ticket_id` reply. The status handler projects an
+ * explicit five-key shape and names the ticket `id`, not `ticket_id`.
+ */
+export interface MatchmakerTicketStatus {
+  id: string;
+  mode: string;
+  status: string;
+  properties: Record<string, unknown>;
+  submitted_at: number;
 }
 
 // --- Leaderboards ---
@@ -224,7 +254,8 @@ export interface LeaderboardTopParams {
 
 export interface SubmitScoreParams {
   score: number;
-  metadata?: Record<string, unknown>;
+  /** Tie-breaker carried alongside the score. Defaults to 0 server-side. */
+  sub_score?: number;
 }
 
 // --- Economy ---
@@ -237,7 +268,6 @@ export interface Wallet {
 
 export interface WalletHistoryParams {
   limit?: number;
-  offset?: number;
 }
 
 export interface Transaction {
@@ -276,7 +306,8 @@ export interface ItemDef {
 }
 
 export interface PurchaseParams {
-  item_id: string;
+  /** The store listing's UUID - the `id` from the browse response. */
+  listing_id: string;
   quantity?: number;
 }
 
@@ -297,7 +328,8 @@ export interface InventoryItem {
 
 export interface ConsumeParams {
   item_id: string;
-  quantity?: number;
+  /** Required. Omitting it is answered with `inventory.invalid_quantity`. */
+  quantity: number;
 }
 
 // --- Social ---
@@ -374,7 +406,6 @@ export interface ChatMessage {
 
 export interface ChatHistoryParams {
   limit?: number;
-  before?: string;
 }
 
 // --- Tournaments ---
@@ -388,7 +419,6 @@ export interface Tournament {
 
 export interface TournamentListParams {
   limit?: number;
-  offset?: number;
   status?: string;
 }
 
@@ -403,7 +433,6 @@ export interface Notification {
 
 export interface NotificationListParams {
   limit?: number;
-  offset?: number;
 }
 
 // --- Storage ---
@@ -414,15 +443,33 @@ export interface SaveData {
   [key: string]: unknown;
 }
 
+/**
+ * An entry of `GET /api/v1/saves`. The list endpoint projects only
+ * [slot, version, updated_at] - the `data` blob is served by `getSave` alone.
+ */
+export interface SaveSummary {
+  slot: string;
+  version: number;
+  updated_at: string;
+  [key: string]: unknown;
+}
+
 export interface StorageItem {
   key: string;
   value: Record<string, unknown>;
   [key: string]: unknown;
 }
 
+export type StoragePerm = "owner" | "public";
+
+/** Per-object permissions on `PUT /api/v1/storage/:collection/:key`. */
+export interface PutStorageParams {
+  read_perm?: StoragePerm;
+  write_perm?: StoragePerm;
+}
+
 export interface StorageListParams {
   limit?: number;
-  offset?: number;
 }
 
 // --- Votes ---
@@ -482,10 +529,15 @@ export interface WorldTick {
   updates: EntityDelta[];
 }
 
+/**
+ * One entry of a `world.tick` `updates` array. The zone serializer emits short
+ * op codes - "a" added, "u" updated, "r" removed - keys the entity on `id`, and
+ * merges the changed fields flat into the same object rather than nesting them.
+ */
 export interface EntityDelta {
-  op: "add" | "update" | "remove";
-  entity_id: string;
-  fields?: Record<string, unknown>;
+  op: "a" | "u" | "r";
+  id: string;
+  [key: string]: unknown;
 }
 
 export interface WorldTerrainChunk {
@@ -692,6 +744,10 @@ export interface MatchListResponse {
   matches: Match[];
 }
 
+export interface MatchLiveResponse {
+  matches: MatchListing[];
+}
+
 export interface WalletsResponse {
   wallets: Wallet[];
 }
@@ -729,7 +785,7 @@ export interface TournamentsResponse {
 }
 
 export interface SavesResponse {
-  saves: SaveData[];
+  saves: SaveSummary[];
 }
 
 export interface StorageListResponse {

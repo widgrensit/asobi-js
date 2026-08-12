@@ -1,5 +1,12 @@
 import { AsobiClient } from "./client.js";
-import type { SaveData, StorageItem, StorageListParams, SavesResponse, StorageListResponse} from "./types.js";
+import type {
+  SaveData,
+  StorageItem,
+  StorageListParams,
+  SavesResponse,
+  StorageListResponse,
+  PutStorageParams,
+} from "./types.js";
 
 const PREFIX = "/api/v1";
 
@@ -15,8 +22,9 @@ export class StorageApi {
     return this.client.get<SaveData>(`${PREFIX}/saves/${slot}`);
   }
 
+  // The blob travels under a `data` key; a bare body persists an empty map.
   putSave(slot: string, data: Record<string, unknown>): Promise<SaveData> {
-    return this.client.put<SaveData>(`${PREFIX}/saves/${slot}`, data);
+    return this.client.put<SaveData>(`${PREFIX}/saves/${slot}`, { data });
   }
 
   // Generic Storage
@@ -31,8 +39,18 @@ export class StorageApi {
     return this.client.get<StorageItem>(`${PREFIX}/storage/${collection}/${key}`);
   }
 
-  putStorage(collection: string, key: string, value: Record<string, unknown>): Promise<StorageItem> {
-    return this.client.put<StorageItem>(`${PREFIX}/storage/${collection}/${key}`, value);
+  // The object travels under a `value` key, alongside the optional perms; a
+  // bare body persists an empty map and leaves both perms at "owner".
+  putStorage(
+    collection: string,
+    key: string,
+    value: Record<string, unknown>,
+    params?: PutStorageParams,
+  ): Promise<StorageItem> {
+    return this.client.put<StorageItem>(`${PREFIX}/storage/${collection}/${key}`, {
+      value,
+      ...params,
+    });
   }
 
   deleteStorage(collection: string, key: string): Promise<void> {

@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { Asobi } from "../src/index.js";
 import type { EntityDelta } from "../src/types.js";
 
@@ -138,16 +140,28 @@ describe("IAP verification body shapes", () => {
 });
 
 describe("EntityDelta shape", () => {
+  // Short op codes, `id` not `entity_id`, and the changed fields merged flat
+  // into the same object - see priv/protocol/fixtures/world.tick.json.
   it("matches the backend delta shape", () => {
-    const add: EntityDelta = { op: "add", entity_id: "e1", fields: { x: 1 } };
-    const update: EntityDelta = { op: "update", entity_id: "e1", fields: { x: 2 } };
-    const remove: EntityDelta = { op: "remove", entity_id: "e1" };
-    expect(add.op).toBe("add");
-    expect(add.entity_id).toBe("e1");
-    expect(add.fields).toEqual({ x: 1 });
-    expect(update.op).toBe("update");
-    expect(remove.op).toBe("remove");
-    expect(remove.fields).toBeUndefined();
+    const add: EntityDelta = { op: "a", id: "e1", x: 120, y: 80 };
+    const update: EntityDelta = { op: "u", id: "e1", x: 2 };
+    const remove: EntityDelta = { op: "r", id: "e1" };
+    expect(add.op).toBe("a");
+    expect(add.id).toBe("e1");
+    expect(add.x).toBe(120);
+    expect(update.op).toBe("u");
+    expect(remove.op).toBe("r");
+    expect(remove.x).toBeUndefined();
+  });
+
+  it("parses the world.tick fixture", () => {
+    const fixture = JSON.parse(
+      readFileSync(join(__dirname, "fixtures", "world.tick.json"), "utf8"),
+    ) as { payload: { tick: number; updates: EntityDelta[] } };
+    const [delta] = fixture.payload.updates;
+    expect(delta.op).toBe("a");
+    expect(delta.id).toBe("01j8x000000000000000000000");
+    expect(delta.x).toBe(120);
   });
 });
 
@@ -218,6 +232,95 @@ describe("list endpoints return the server envelope", () => {
   it("votes.listByMatch", async () => {
     enqueue(200, { votes: [{ id: "v1" }] });
     expect((await newSdk().votes.listByMatch("m1")).votes).toHaveLength(1);
+  });
+});
+
+// Request/response shapes the SDK had wrong against the live controllers. Each
+// of these was a silent failure: a 500, a dropped filter, or a stored empty map.
+describe("wire shapes match the controllers", () => {
+  it("purchase posts listing_id", async () => {
+    enqueue(200, { success: true, item: { id: "i1" } });
+    const sdk = newSdk();
+    await sdk.economy.purchase({ listing_id: "l1" });
+    expect(calls[0].url).toBe("https://api.test/api/v1/store/purchase");
+    expect(calls[0].body).toEqual({ listing_id: "l1" });
+  });
+
+  it("consume posts a required quantity", async () => {
+    enqueue(200, { success: true });
+    const sdk = newSdk();
+    await sdk.inventory.consume({ item_id: "i1", quantity: 2 });
+    expect(calls[0].body).toEqual({ item_id: "i1", quantity: 2 });
+  });
+
+  it("submit carries sub_score", async () => {
+    enqueue(200, { leaderboard_id: "lb", player_id: "p1", score: 10, sub_score: 3, rank: 1 });
+    const sdk = newSdk();
+    await sdk.leaderboards.submit("lb", { score: 10, sub_score: 3 });
+    expect(calls[0].body).toEqual({ score: 10, sub_score: 3 });
+  });
+
+  // Bare bodies here persisted an empty map: the controllers read `data` and
+  // `value` out of the body and default both to #{}.
+  it("putSave wraps the blob in `data`", async () => {
+    enqueue(200, { slot: "1", data: { level: 5 }, version: 2 });
+    const sdk = newSdk();
+    await sdk.storage.putSave("1", { level: 5 });
+    expect(calls[0].method).toBe("PUT");
+    expect(calls[0].body).toEqual({ data: { level: 5 } });
+  });
+
+  it("putStorage wraps the object in `value` and sends the perms", async () => {
+    enqueue(200, { key: "k1", value: { a: 1 } });
+    const sdk = newSdk();
+    await sdk.storage.putStorage("col", "k1", { a: 1 }, { read_perm: "public" });
+    expect(calls[0].body).toEqual({ value: { a: 1 }, read_perm: "public" });
+  });
+
+  it("putStorage sends only the value when no perms are given", async () => {
+    enqueue(200, { key: "k1", value: { a: 1 } });
+    const sdk = newSdk();
+    await sdk.storage.putStorage("col", "k1", { a: 1 });
+    expect(calls[0].body).toEqual({ value: { a: 1 } });
+  });
+
+  it("matches.live passes the joinable filter and reads match_id", async () => {
+    enqueue(200, {
+      matches: [
+        { match_id: "m1", mode: "demo", status: "waiting", player_count: 1, max_players: 4, joinable: true },
+      ],
+    });
+    const sdk = newSdk();
+    const res = await sdk.matches.live({ mode: "demo", joinable: true });
+    expect(calls[0].url).toBe("https://api.test/api/v1/matches/live?mode=demo&joinable=true");
+    expect(res.matches[0].match_id).toBe("m1");
+    expect(res.matches[0].joinable).toBe(true);
+  });
+
+  // The status projection names the ticket `id`; only the POST reply and the
+  // matchmaker.queued frame carry `ticket_id`.
+  it("matchmaker.status reads id, add reads ticket_id", async () => {
+    const sdk = newSdk();
+    enqueue(200, { ticket_id: "t1", status: "pending" });
+    expect((await sdk.matchmaker.add({ mode: "arena" })).ticket_id).toBe("t1");
+    enqueue(200, {
+      id: "t1",
+      mode: "arena",
+      status: "pending",
+      properties: {},
+      submitted_at: 1735689600000,
+    });
+    const ticket = await sdk.matchmaker.status("t1");
+    expect(ticket.id).toBe("t1");
+    expect(ticket.submitted_at).toBe(1735689600000);
+  });
+
+  // GET /saves projects [slot, version, updated_at] - never the blob.
+  it("listSaves returns summaries without the data blob", async () => {
+    enqueue(200, { saves: [{ slot: "1", version: 2, updated_at: "2026-01-01T00:00:00Z" }] });
+    const res = await newSdk().storage.listSaves();
+    expect(res.saves[0].version).toBe(2);
+    expect(res.saves[0].data).toBeUndefined();
   });
 });
 

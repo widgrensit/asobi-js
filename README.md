@@ -192,11 +192,17 @@ can grow a field without breaking a shipped client.
 
 ### Client-side prediction
 
-`world.ack` is the server's input acknowledgement. It is a per-connection
-frame, sent only to a connection that stamped a `seq`, and never rides the
-shared `world.tick` broadcast. Stamp each `world.input` with your own
+`world.ack` is the server's input acknowledgement. It is addressed to a single
+connection, reaches only a connection that stamped a `seq`, and never rides
+the shared `world.tick` broadcast. Stamp each `world.input` with your own
 increasing counter through the third argument of `sendFire`, and the server
 echoes back the highest counter it has consumed.
+
+What it is not is one stream. The ack is emitted per subscribed zone, so once
+you have crossed a zone boundary you receive several of them per broadcast
+tick and the `seq` you receive can go backwards. Reconcile against a running
+maximum, never against the raw frame; the per-zone bullet below has the
+detail.
 
 `world.tick` is a delta frame, not a snapshot, so prediction needs two pieces:
 a local entity map you accumulate from those deltas, and a buffer of inputs
@@ -221,6 +227,7 @@ declare function simulate(
 declare function render(state: Record<string, unknown>): void;
 
 let seq = 0;
+let acked = 0;
 const pending = new Map<number, Input>();
 
 function sendInput(input: Input) {
@@ -243,8 +250,13 @@ ws.on("world.tick", (payload) => {
 
 // `ack` infers as WorldAckPayload ({ tick, seq }) - no annotation, no cast.
 ws.on("world.ack", (ack) => {
+  // Acks come from every zone you are subscribed to, so ack.seq can be lower
+  // than one already seen. Prune against the running maximum, not the frame:
+  // pruning on a stale ack re-applies inputs the server already consumed.
+  if (ack.seq <= acked) return;
+  acked = ack.seq;
   for (const s of [...pending.keys()]) {
-    if (s <= ack.seq) pending.delete(s);
+    if (s <= acked) pending.delete(s);
   }
   let state = entities.get(myEntityId);
   if (!state) return;
@@ -253,30 +265,54 @@ ws.on("world.ack", (ack) => {
 });
 ```
 
-Prune first, then replay: drop every buffered input at or below `ack.seq` and
-re-apply what is left on top of the accumulated state. The rest of the
-contract:
+Advance, prune, then replay: ignore any ack that does not beat the running
+maximum, drop every buffered input at or below the new maximum, and re-apply
+what is left on top of the accumulated state. The rest of the contract:
 
 - The ack is a high-water mark, not a receipt per input: `seq` is the highest
-  input consumed as of world tick `tick`. A rejected input still advances it,
-  so a dropped input never strands the client.
-- Order on a broadcast tick: when the tick produced deltas, `world.tick` goes
-  out first and `world.ack` second on the same connection. A tick where
-  nothing changed sends no `world.tick` at all, so that ack arrives on its
-  own. Reconcile in the ack handler: a client that prunes only inside its tick
-  handler misses every ack that comes without one.
+  input the sending zone has consumed as of world tick `tick`. A rejected
+  input still advances it, so a dropped input never strands the client.
+- The ack is per zone, not per connection, and this is the one that breaks a
+  naive loop. The high-water mark is zone state, and every zone you are
+  subscribed to that holds a mark for you acks you on its own broadcast, so
+  once you have crossed a boundary and sent input from the far side you get
+  more than one `world.ack` per broadcast tick, for as long as the zone you
+  left stays in your ring. Nothing in the frame says which zone sent it. At
+  the default `view_radius` of 1 you are subscribed to a 3x3 ring of up to
+  nine zones, and a one-step crossing does not unsubscribe the zone you left:
+  it keeps emitting its own frozen mark while the zone you moved into
+  advances, so `payload.seq` can go backwards between consecutive acks. "Drop
+  everything at or below `ack.seq` and replay the rest" is only safe against a
+  monotonic mark; against the raw frame it re-applies inputs the server has
+  already consumed. Hence the running maximum in the sample. Your own counter
+  never goes backwards - what you receive does. Both the server guide and the
+  server's own source comment still call this ack per-connection; that
+  wording is wrong and is tracked as
+  [widgrensit/asobi#477](https://github.com/widgrensit/asobi/issues/477).
+- Order holds within a zone, not across them: when a zone's tick produced
+  deltas, its `world.tick` goes out first and its `world.ack` second. A tick
+  where nothing changed sends no `world.tick` at all, so that ack arrives on
+  its own, and frames from different zones interleave freely. Reconcile in the
+  ack handler: a client that prunes only inside its tick handler misses every
+  ack that comes without one.
 - Accumulate every op, not just `"u"`. An entity's first delta is an `"a"`,
   including your own player's, so a handler that only merges updates leaves
   the map empty and every ack silently reconciles nothing.
-- Snapshots are not a once-per-session event. Every new zone subscription
-  delivers a full `op:"a"` snapshot of that zone's entities, as a `world.tick`
-  carrying `tick` 0. A zone crossing subscribes you to the zones entering your
-  view, so fresh snapshots keep arriving mid-session; the ticks in between are
-  deltas. A zone leaving your view sends `op:"r"` for each of its entities.
-  Re-subscribing to a zone you already hold sends nothing, and neither does
-  subscribing to a zone that currently holds no entities.
-- Opt-in. The server acks only connections that have stamped a valid `seq`.
-  Subscribe without ever sending one and you get silence, not an error.
+- Snapshots are neither once per session nor once per crossing. A full
+  `op:"a"` snapshot of a zone's entities is sent on every new subscription to
+  that zone, as a `world.tick` carrying `tick` 0. Joining subscribes you to
+  your whole interest ring, so expect one snapshot per loaded, non-empty zone
+  in it - typically several frames, not one. After that a snapshot arrives
+  only when a zone enters your ring for the first time. A one-step crossing
+  usually delivers nothing new, because at `view_radius` 1 the zone you moved
+  into was already in the ring and re-subscribing to a zone you already hold
+  is a no-op. A zone leaving your ring sends `op:"r"` for each of its
+  entities, and subscribing to a zone that holds no entities sends nothing at
+  all.
+- Opt-in, and per zone here too. A zone acks you only once it has consumed an
+  input from you carrying a valid `seq`, and your input goes to the zone you
+  currently occupy, so ring zones you have never stood in never ack you.
+  Subscribe without ever stamping a `seq` and you get silence, not an error.
 - On the wire `seq` is a top-level sibling of `payload`
   (`{"type":"world.input","seq":412,"payload":{...}}`), never nested inside
   it. `sendFire` stamps it for you, omits it entirely when you pass no `seq`,
@@ -285,8 +321,8 @@ contract:
   bound is exactly 2^53-1). A value outside that, fractional or negative or
   not a number, is ignored, but the input is not: it is queued and applied to
   the world exactly as normal, and only the acknowledgement is skipped. The
-  ack stream does not fall silent either. Once a valid `seq` has been
-  recorded, `world.ack` keeps arriving every broadcast tick, holding the last
+  ack stream does not fall silent either. Once that zone has recorded a valid
+  `seq`, its `world.ack` keeps arriving every broadcast tick, holding the last
   good high-water mark instead of advancing it. A whole-numbered JS value is
   safe, since `JSON.stringify` writes `3.0` as `3`, but a counter seeded from
   `performance.now()` goes out as `3.5` and stops moving the ack.
@@ -299,8 +335,11 @@ contract:
 - `seq` does not defeat `dedupe`: dedupe compares payloads only. A deduped
   send never reaches the wire, so its `seq` is covered by the ack of the next
   send that does.
-- Ack cadence follows the world mode's `broadcast_interval` (default `3`).
-  Set it to `1` for an ack every tick. See the
+- Ack cadence follows the world mode's `broadcast_interval` (default `3`), and
+  each zone applies that gate to its own broadcast. So "an ack every
+  `broadcast_interval` ticks" counts per zone, not per connection: subscribed
+  to several acking zones, you get one frame from each. Set the interval to
+  `1` for an ack every tick. See the
   [world server guide](https://asobi.dev/docs/world-server).
 - Declare the buffered input as a `type`, not an `interface`. `sendFire` takes
   `Record<string, unknown>`, and an interface has no implicit index signature,

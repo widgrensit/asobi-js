@@ -274,41 +274,50 @@ what is left on top of the accumulated state. The rest of the contract:
   input still advances it, so a dropped input never strands the client.
 - The ack is per zone, not per connection, and this is the one that breaks a
   naive loop. The high-water mark is zone state, and every zone you are
-  subscribed to that holds a mark for you acks you on its own broadcast, so
-  once you have crossed a boundary and sent input from the far side you get
-  more than one `world.ack` per broadcast tick, for as long as the zone you
-  left stays in your ring. Nothing in the frame says which zone sent it. At
-  the default `view_radius` of 1 you are subscribed to a 3x3 ring of up to
-  nine zones, and a one-step crossing does not unsubscribe the zone you left:
-  it keeps emitting its own frozen mark while the zone you moved into
-  advances, so `payload.seq` can go backwards between consecutive acks. "Drop
-  everything at or below `ack.seq` and replay the rest" is only safe against a
-  monotonic mark; against the raw frame it re-applies inputs the server has
-  already consumed. Hence the running maximum in the sample. Your own counter
-  never goes backwards - what you receive does. Both the server guide and the
-  server's own source comment still call this ack per-connection; that
-  wording is wrong and is tracked as
+  subscribed to that holds a mark for you acks you, so once you have crossed a
+  boundary and sent input from the far side you get more than one `world.ack`
+  per broadcast tick, for as long as the zone you left stays in your ring. One
+  ticker drives the whole world, so those acks land together on the same tick.
+  Nothing in the frame says which zone sent it. At the default `view_radius`
+  of 1 you are subscribed to a 3x3 ring of up to nine zones, and a one-step
+  crossing does not unsubscribe the zone you left: it keeps emitting its own
+  frozen mark while the zone you moved into advances, so `payload.seq` can go
+  backwards between consecutive acks. "Drop everything at or below `ack.seq`
+  and replay the rest" is only safe against a monotonic mark; against the raw
+  frame it re-applies inputs the server has already consumed. Hence the
+  running maximum in the sample. Your own counter never goes backwards - what
+  you receive does. Both the server guide and the server's own source comment
+  still call this ack per-connection; that wording is wrong and is tracked as
   [widgrensit/asobi#477](https://github.com/widgrensit/asobi/issues/477).
 - Order holds within a zone, not across them: when a zone's tick produced
   deltas, its `world.tick` goes out first and its `world.ack` second. A tick
   where nothing changed sends no `world.tick` at all, so that ack arrives on
-  its own, and frames from different zones interleave freely. Reconcile in the
-  ack handler: a client that prunes only inside its tick handler misses every
-  ack that comes without one.
+  its own. Across zones there is no order at all: the frames of one broadcast
+  tick arrive as a batch, in whatever order the zones emit them. Reconcile in
+  the ack handler: a client that prunes only inside its tick handler misses
+  every ack that comes without one.
 - Accumulate every op, not just `"u"`. An entity's first delta is an `"a"`,
   including your own player's, so a handler that only merges updates leaves
   the map empty and every ack silently reconciles nothing.
-- Snapshots are neither once per session nor once per crossing. A full
+- Snapshots are not once per session, and not once per zone either. A full
   `op:"a"` snapshot of a zone's entities is sent on every new subscription to
-  that zone, as a `world.tick` carrying `tick` 0. Joining subscribes you to
-  your whole interest ring, so expect one snapshot per loaded, non-empty zone
-  in it - typically several frames, not one. After that a snapshot arrives
-  only when a zone enters your ring for the first time. A one-step crossing
-  usually delivers nothing new, because at `view_radius` 1 the zone you moved
-  into was already in the ring and re-subscribing to a zone you already hold
-  is a no-op. A zone leaving your ring sends `op:"r"` for each of its
-  entities, and subscribing to a zone that holds no entities sends nothing at
-  all.
+  that zone, as a `world.tick` carrying `tick` 0, where "new" means you are
+  not already in that zone's subscriber list. Joining subscribes you to your
+  whole interest ring, so expect one snapshot per loaded, non-empty zone in
+  it - typically several frames, not one.
+- A crossing does deliver fresh snapshots. It recomputes the ring, and the
+  band of zones that has just entered is subscribed and replays a full
+  snapshot each. Only the destination zone is a no-op, because at
+  `view_radius` 1 it was already in the old ring and re-subscribing to a zone
+  you already hold does nothing; do not generalise that no-op to the rest of
+  the crossing. Leaving your ring unsubscribes you and sends `op:"r"` for each
+  of that zone's entities, so walking back re-subscribes you and replays
+  another full snapshot: a player oscillating across a boundary re-snapshots
+  every time. Budget for it, and keep the accumulate-every-op handler above
+  correct under repeat adds.
+- A zone holding no entities is not silent. It skips the entity snapshot, but
+  the terrain push is a separate unconditional step, so a world with a terrain
+  provider still delivers that zone's `world.terrain` chunk on subscription.
 - Opt-in, and per zone here too. A zone acks you only once it has consumed an
   input from you carrying a valid `seq`, and your input goes to the zone you
   currently occupy, so ring zones you have never stood in never ack you.
@@ -335,11 +344,13 @@ what is left on top of the accumulated state. The rest of the contract:
 - `seq` does not defeat `dedupe`: dedupe compares payloads only. A deduped
   send never reaches the wire, so its `seq` is covered by the ack of the next
   send that does.
-- Ack cadence follows the world mode's `broadcast_interval` (default `3`), and
-  each zone applies that gate to its own broadcast. So "an ack every
-  `broadcast_interval` ticks" counts per zone, not per connection: subscribed
-  to several acking zones, you get one frame from each. Set the interval to
-  `1` for an ack every tick. See the
+- Ack cadence follows the world mode's `broadcast_interval` (default `3`). One
+  ticker per world fans a single shared tick number out to every zone, and
+  `broadcast_interval` is one world-level value copied into each zone, so
+  every zone gates on the same tick. Zones are not on independent schedules:
+  subscribed to several acking zones you get one frame from each, and they
+  arrive together on the same broadcast tick rather than spread across
+  different cadences. Set the interval to `1` for an ack every tick. See the
   [world server guide](https://asobi.dev/docs/world-server).
 - Declare the buffered input as a `type`, not an `interface`. `sendFire` takes
   `Record<string, unknown>`, and an interface has no implicit index signature,

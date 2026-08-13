@@ -69,6 +69,11 @@ ws.sendFire("match.input", { data: { move_x: 1, move_y: 0 } });
 // sent, so an idle player doesn't flood the socket every frame.
 ws.sendFire("match.input", { move_x: 1, move_y: 0 }, { dedupe: true });
 
+// World input stamped with your own counter: the server acks the highest one
+// it consumed, which is what client-side prediction reconciles against.
+ws.sendFire("world.input", { move_x: 1 }, { seq: 1 });
+ws.on("world.ack", (ack) => console.log("consumed", ack.seq, "at tick", ack.tick));
+
 // RPC: send and await a typed reply
 const reply = await ws.send("match.join", { match_id: "abc" });
 console.log("joined", reply);
@@ -157,8 +162,9 @@ ws.connect(): Promise<Record<string, unknown>>
 ws.close(): void
 ws.send(type: string, payload?: object): Promise<Record<string, unknown>>              // request/reply
 ws.rpc(method: string, params?: object): Promise<Record<string, unknown>>              // call an extension
-ws.sendFire(type: string, payload?: object, options?: { dedupe?: boolean }): void      // fire-and-forget
+ws.sendFire(type: string, payload?: object, options?: { dedupe?: boolean; seq?: number }): void  // fire-and-forget
 ws.on(event: string, handler: (payload) => void): void
+ws.on("world.ack", handler: (payload: WorldAckPayload) => void)                        // typed via WsPayloadMap
 ws.onMatchState<T>(handler: (state: MatchState<T>) => void): void                      // typed match.state
 ws.off(event: string, handler): void
 ```
@@ -183,6 +189,179 @@ try {
 Replies are correlated by `cid`, so concurrent calls are safe and may answer
 out of order. `params` and the returned `result` are always objects, so either
 can grow a field without breaking a shipped client.
+
+### Client-side prediction
+
+`world.ack` is the server's input acknowledgement. It is addressed to a single
+connection, reaches only a connection that stamped a `seq`, and never rides
+the shared `world.tick` broadcast. Stamp each `world.input` with your own
+increasing counter through the third argument of `sendFire`, and the server
+echoes back the highest counter it has consumed.
+
+What it is not is one stream. The ack is emitted per subscribed zone, so once
+you have crossed a zone boundary you receive several of them per broadcast
+tick and the `seq` you receive can go backwards. Reconcile against a running
+maximum, never against the raw frame; the per-zone bullet below has the
+detail.
+
+`world.tick` is a delta frame, not a snapshot, so prediction needs two pieces:
+a local entity map you accumulate from those deltas, and a buffer of inputs
+you have predicted but not yet had acked.
+
+```ts
+import type { AsobiWebSocket, EntityDelta } from "@widgrensit/asobi";
+
+type Input = { move_x: number; move_y: number };
+
+// Yours to supply: a connected socket, your own entity's id, and your local
+// simulation. Your player's entity is keyed by your player id (the
+// `player_id` the auth session returned); every other id in a zone is
+// whatever the game script assigned it.
+declare const ws: AsobiWebSocket;
+declare const myEntityId: string;
+declare function applyLocally(input: Input): void;
+declare function simulate(
+  state: Record<string, unknown>,
+  input: Input,
+): Record<string, unknown>;
+declare function render(state: Record<string, unknown>): void;
+
+let seq = 0;
+let acked = 0;
+const pending = new Map<number, Input>();
+
+function sendInput(input: Input) {
+  seq += 1;
+  pending.set(seq, input);
+  applyLocally(input);
+  ws.sendFire("world.input", input, { seq });
+}
+
+// Accumulate the deltas: "a" is a full add, "u" carries changed fields
+// only, "r" is a removal. Never assign the frame wholesale as state.
+const entities = new Map<string, Record<string, unknown>>();
+ws.on("world.tick", (payload) => {
+  for (const { op, id, ...fields } of payload.updates as EntityDelta[]) {
+    if (op === "r") entities.delete(id);
+    else if (op === "a") entities.set(id, fields);
+    else entities.set(id, { ...entities.get(id), ...fields });
+  }
+});
+
+// `ack` infers as WorldAckPayload ({ tick, seq }) - no annotation, no cast.
+ws.on("world.ack", (ack) => {
+  // Acks come from every zone you are subscribed to, so ack.seq can be lower
+  // than one already seen. Prune against the running maximum, not the frame:
+  // pruning on a stale ack re-applies inputs the server already consumed.
+  if (ack.seq <= acked) return;
+  acked = ack.seq;
+  for (const s of [...pending.keys()]) {
+    if (s <= acked) pending.delete(s);
+  }
+  let state = entities.get(myEntityId);
+  if (!state) return;
+  for (const input of pending.values()) state = simulate(state, input);
+  render(state);
+});
+```
+
+Advance, prune, then replay: ignore any ack that does not beat the running
+maximum, drop every buffered input at or below the new maximum, and re-apply
+what is left on top of the accumulated state. The rest of the contract:
+
+- The ack is a high-water mark, not a receipt per input: `seq` is the highest
+  input the sending zone has consumed as of world tick `tick`. A rejected
+  input still advances it, so a dropped input never strands the client.
+- The ack is per zone, not per connection, and this is the one that breaks a
+  naive loop. The high-water mark is zone state, and every zone you are
+  subscribed to that holds a mark for you acks you, so once you have crossed a
+  boundary and sent input from the far side you get more than one `world.ack`
+  per broadcast tick, for as long as the zone you left stays in your ring. One
+  ticker drives the whole world, so those acks land together on the same tick.
+  Nothing in the frame says which zone sent it. At the default `view_radius`
+  of 1 you are subscribed to a 3x3 ring of up to nine zones, and a one-step
+  crossing does not unsubscribe the zone you left: it keeps emitting its own
+  frozen mark while the zone you moved into advances, so `payload.seq` can go
+  backwards between consecutive acks. "Drop everything at or below `ack.seq`
+  and replay the rest" is only safe against a monotonic mark; against the raw
+  frame it re-applies inputs the server has already consumed. Hence the
+  running maximum in the sample. Your own counter never goes backwards - what
+  you receive does. Both the server guide and the server's own source comment
+  still call this ack per-connection; that wording is wrong and is tracked as
+  [widgrensit/asobi#477](https://github.com/widgrensit/asobi/issues/477).
+- Order holds within a zone, not across them: when a zone's tick produced
+  deltas, its `world.tick` goes out first and its `world.ack` second. A tick
+  where nothing changed sends no `world.tick` at all, so that ack arrives on
+  its own. Across zones there is no order at all: the frames of one broadcast
+  tick arrive as a batch, in whatever order the zones emit them. Reconcile in
+  the ack handler: a client that prunes only inside its tick handler misses
+  every ack that comes without one.
+- Accumulate every op, not just `"u"`. An entity's first delta is an `"a"`,
+  including your own player's, so a handler that only merges updates leaves
+  the map empty and every ack silently reconciles nothing.
+- Snapshots are not once per session, and not once per zone either. A full
+  `op:"a"` snapshot of a zone's entities is sent on every new subscription to
+  that zone, as a `world.tick` carrying `tick` 0, where "new" means you are
+  not already in that zone's subscriber list. Joining subscribes you to your
+  whole interest ring, so expect one snapshot per loaded, non-empty zone in
+  it - typically several frames, not one.
+- A crossing does deliver fresh snapshots. It recomputes the ring, and the
+  band of zones that has just entered is subscribed and replays a full
+  snapshot each. Only the destination zone is a no-op, because at
+  `view_radius` 1 it was already in the old ring and re-subscribing to a zone
+  you already hold does nothing; do not generalise that no-op to the rest of
+  the crossing. Leaving your ring unsubscribes you and sends `op:"r"` for each
+  of that zone's entities, so walking back re-subscribes you and replays
+  another full snapshot: a player oscillating across a boundary re-snapshots
+  every time. Budget for it, and keep the accumulate-every-op handler above
+  correct under repeat adds.
+- A zone holding no entities is not silent. It skips the entity snapshot, but
+  the terrain push is a separate unconditional step, so a world with a terrain
+  provider still delivers that zone's `world.terrain` chunk on subscription.
+- Opt-in, and per zone here too. A zone acks you only once it has consumed an
+  input from you carrying a valid `seq`, and your input goes to the zone you
+  currently occupy, so ring zones you have never stood in never ack you.
+  Subscribe without ever stamping a `seq` and you get silence, not an error.
+- On the wire `seq` is a top-level sibling of `payload`
+  (`{"type":"world.input","seq":412,"payload":{...}}`), never nested inside
+  it. `sendFire` stamps it for you, omits it entirely when you pass no `seq`,
+  and treats `0` as a value, not an absence.
+- The server takes `seq` as an integer in `0 .. Number.MAX_SAFE_INTEGER` (its
+  bound is exactly 2^53-1). A value outside that, fractional or negative or
+  not a number, is ignored, but the input is not: it is queued and applied to
+  the world exactly as normal, and only the acknowledgement is skipped. The
+  ack stream does not fall silent either. Once that zone has recorded a valid
+  `seq`, its `world.ack` keeps arriving every broadcast tick, holding the last
+  good high-water mark instead of advancing it. A whole-numbered JS value is
+  safe, since `JSON.stringify` writes `3.0` as `3`, but a counter seeded from
+  `performance.now()` goes out as `3.5` and stops moving the ack.
+- `world.tick` has no `WsPayloadMap` entry, so its payload arrives as
+  `Record<string, unknown>` and `updates` needs the cast to the exported
+  `EntityDelta[]`. `world.ack` does have one, so `on()` infers
+  `WorldAckPayload` (also exported, if you want to name the type) and an ack
+  handler needs neither annotation nor cast. `JSON.parse` gives `tick` and
+  `seq` as ordinary numbers, so no conversion either.
+- `seq` does not defeat `dedupe`: dedupe compares payloads only. A deduped
+  send never reaches the wire, so its `seq` is covered by the ack of the next
+  send that does.
+- Ack cadence follows the world mode's `broadcast_interval` (default `3`). One
+  ticker per world fans a single shared tick number out to every zone, and
+  `broadcast_interval` is one world-level value copied into each zone, so
+  every zone gates on the same tick. Zones are not on independent schedules:
+  subscribed to several acking zones you get one frame from each, and they
+  arrive together on the same broadcast tick rather than spread across
+  different cadences. Set the interval to `1` for an ack every tick. See the
+  [world server guide](https://asobi.dev/docs/world-server).
+- Declare the buffered input as a `type`, not an `interface`. `sendFire` takes
+  `Record<string, unknown>`, and an interface has no implicit index signature,
+  so an `interface Input` fails to compile at the `sendFire` call.
+
+Requires a server on asobi core v0.84.0 or newer. Older servers never send
+`world.ack`, so the client sees silence rather than an error. On the client
+side, the typed `world.ack` dispatch and the `seq` option shipped in
+asobi-js v0.16.0; before that there is no `seq` option to stamp with.
+
+Full frame semantics: [client-side prediction](https://asobi.dev/docs/protocols/websocket#client-side-prediction).
 
 ## Engine and framework adapters
 

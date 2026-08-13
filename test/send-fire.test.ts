@@ -143,6 +143,38 @@ describe("sendFire dedupe", () => {
   });
 });
 
+describe("sendFire seq", () => {
+  it("stamps seq as a top-level sibling of payload, not nested inside it", async () => {
+    const { ws, sock } = await connectedClient();
+
+    ws.sendFire("world.input", { move_x: 1 }, { seq: 7 });
+
+    const [frame] = fireMessages(sock, "world.input");
+    expect(frame.seq).toBe(7);
+    expect(frame.payload).toEqual({ move_x: 1 });
+    expect((frame.payload as Record<string, unknown>).seq).toBeUndefined();
+  });
+
+  it("keeps seq numeric on the wire", async () => {
+    const { ws, sock } = await connectedClient();
+
+    ws.sendFire("world.input", { move_x: 1 }, { seq: 0 });
+
+    const raw = sock.sent.find((s) => JSON.parse(s).type === "world.input")!;
+    expect(raw).toContain('"seq":0');
+    expect(typeof (JSON.parse(raw) as { seq: unknown }).seq).toBe("number");
+  });
+
+  it("omits seq from the frame when not provided", async () => {
+    const { ws, sock } = await connectedClient();
+
+    ws.sendFire("world.input", { move_x: 1 });
+
+    const [frame] = fireMessages(sock, "world.input");
+    expect("seq" in frame).toBe(false);
+  });
+});
+
 describe("sendFire on a not-open socket", () => {
   it("drops the send and warns once via console.warn", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});

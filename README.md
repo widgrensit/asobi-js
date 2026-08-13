@@ -203,8 +203,22 @@ a local entity map you accumulate from those deltas, and a buffer of inputs
 you have predicted but not yet had acked.
 
 ```ts
+import type { AsobiWebSocket, EntityDelta } from "@widgrensit/asobi";
+
 type Input = { move_x: number; move_y: number };
-type Delta = { op: "a" | "u" | "r"; id: string } & Record<string, unknown>;
+
+// Yours to supply: a connected socket, your own entity's id, and your local
+// simulation. Your player's entity is keyed by your player id (the
+// `player_id` the auth session returned); every other id in a zone is
+// whatever the game script assigned it.
+declare const ws: AsobiWebSocket;
+declare const myEntityId: string;
+declare function applyLocally(input: Input): void;
+declare function simulate(
+  state: Record<string, unknown>,
+  input: Input,
+): Record<string, unknown>;
+declare function render(state: Record<string, unknown>): void;
 
 let seq = 0;
 const pending = new Map<number, Input>();
@@ -220,7 +234,7 @@ function sendInput(input: Input) {
 // only, "r" is a removal. Never assign the frame wholesale as state.
 const entities = new Map<string, Record<string, unknown>>();
 ws.on("world.tick", (payload) => {
-  for (const { op, id, ...fields } of payload.updates as Delta[]) {
+  for (const { op, id, ...fields } of payload.updates as EntityDelta[]) {
     if (op === "r") entities.delete(id);
     else if (op === "a") entities.set(id, fields);
     else entities.set(id, { ...entities.get(id), ...fields });
@@ -246,29 +260,42 @@ contract:
 - The ack is a high-water mark, not a receipt per input: `seq` is the highest
   input consumed as of world tick `tick`. A rejected input still advances it,
   so a dropped input never strands the client.
-- Order within a tick: `world.tick` goes out first, `world.ack` second, on the
-  same connection. Reconciling inside the ack handler therefore already sees
-  that tick's deltas; reconciling inside the tick handler replays against a
-  buffer that has not been pruned yet.
+- Order on a broadcast tick: when the tick produced deltas, `world.tick` goes
+  out first and `world.ack` second on the same connection. A tick where
+  nothing changed sends no `world.tick` at all, so that ack arrives on its
+  own. Reconcile in the ack handler: a client that prunes only inside its tick
+  handler misses every ack that comes without one.
 - Accumulate every op, not just `"u"`. An entity's first delta is an `"a"`,
   including your own player's, so a handler that only merges updates leaves
-  the map empty and every ack silently reconciles nothing. The first
-  `world.tick` after `world.joined` is a full snapshot (all `"a"`, `tick` 0);
-  everything after it is a delta.
-- Opt-in. The server acks only connections that stamped a `seq`. Subscribe
-  without ever sending one and you get silence, not an error.
+  the map empty and every ack silently reconciles nothing.
+- Snapshots are not a once-per-session event. Every new zone subscription
+  delivers a full `op:"a"` snapshot of that zone's entities, as a `world.tick`
+  carrying `tick` 0. A zone crossing subscribes you to the zones entering your
+  view, so fresh snapshots keep arriving mid-session; the ticks in between are
+  deltas. A zone leaving your view sends `op:"r"` for each of its entities.
+  Re-subscribing to a zone you already hold sends nothing, and neither does
+  subscribing to a zone that currently holds no entities.
+- Opt-in. The server acks only connections that have stamped a valid `seq`.
+  Subscribe without ever sending one and you get silence, not an error.
 - On the wire `seq` is a top-level sibling of `payload`
   (`{"type":"world.input","seq":412,"payload":{...}}`), never nested inside
   it. `sendFire` stamps it for you, omits it entirely when you pass no `seq`,
   and treats `0` as a value, not an absence.
-- The server accepts an integer `seq` in `0 .. Number.MAX_SAFE_INTEGER`
-  (its bound is exactly 2^53-1) and silently drops anything else with no ack
-  and no error. A whole-numbered JS value is safe - `JSON.stringify` writes
-  `3.0` as `3` - but a fractional counter (seeding from `performance.now()`,
-  say) goes out as `3.5` and never gets acked.
-- `WorldAckPayload` is exported if you want to name the type. `on()` infers it
-  through `WsPayloadMap`, so an ack handler needs no annotation, and
-  `JSON.parse` gives both fields as ordinary numbers, so no conversion either.
+- The server takes `seq` as an integer in `0 .. Number.MAX_SAFE_INTEGER` (its
+  bound is exactly 2^53-1). A value outside that, fractional or negative or
+  not a number, is ignored, but the input is not: it is queued and applied to
+  the world exactly as normal, and only the acknowledgement is skipped. The
+  ack stream does not fall silent either. Once a valid `seq` has been
+  recorded, `world.ack` keeps arriving every broadcast tick, holding the last
+  good high-water mark instead of advancing it. A whole-numbered JS value is
+  safe, since `JSON.stringify` writes `3.0` as `3`, but a counter seeded from
+  `performance.now()` goes out as `3.5` and stops moving the ack.
+- `world.tick` has no `WsPayloadMap` entry, so its payload arrives as
+  `Record<string, unknown>` and `updates` needs the cast to the exported
+  `EntityDelta[]`. `world.ack` does have one, so `on()` infers
+  `WorldAckPayload` (also exported, if you want to name the type) and an ack
+  handler needs neither annotation nor cast. `JSON.parse` gives `tick` and
+  `seq` as ordinary numbers, so no conversion either.
 - `seq` does not defeat `dedupe`: dedupe compares payloads only. A deduped
   send never reaches the wire, so its `seq` is covered by the ack of the next
   send that does.

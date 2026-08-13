@@ -69,6 +69,11 @@ ws.sendFire("match.input", { data: { move_x: 1, move_y: 0 } });
 // sent, so an idle player doesn't flood the socket every frame.
 ws.sendFire("match.input", { move_x: 1, move_y: 0 }, { dedupe: true });
 
+// World input stamped with your own counter: the server acks the highest one
+// it consumed, which is what client-side prediction reconciles against.
+ws.sendFire("world.input", { move_x: 1 }, { seq: 1 });
+ws.on("world.ack", (ack) => console.log("consumed", ack.seq, "at tick", ack.tick));
+
 // RPC: send and await a typed reply
 const reply = await ws.send("match.join", { match_id: "abc" });
 console.log("joined", reply);
@@ -157,8 +162,9 @@ ws.connect(): Promise<Record<string, unknown>>
 ws.close(): void
 ws.send(type: string, payload?: object): Promise<Record<string, unknown>>              // request/reply
 ws.rpc(method: string, params?: object): Promise<Record<string, unknown>>              // call an extension
-ws.sendFire(type: string, payload?: object, options?: { dedupe?: boolean }): void      // fire-and-forget
+ws.sendFire(type: string, payload?: object, options?: { dedupe?: boolean; seq?: number }): void  // fire-and-forget
 ws.on(event: string, handler: (payload) => void): void
+ws.on("world.ack", handler: (payload: WorldAckPayload) => void)                        // typed via WsPayloadMap
 ws.onMatchState<T>(handler: (state: MatchState<T>) => void): void                      // typed match.state
 ws.off(event: string, handler): void
 ```
@@ -183,6 +189,102 @@ try {
 Replies are correlated by `cid`, so concurrent calls are safe and may answer
 out of order. `params` and the returned `result` are always objects, so either
 can grow a field without breaking a shipped client.
+
+### Client-side prediction
+
+`world.ack` is the server's input acknowledgement. It is a per-connection
+frame, sent only to a connection that stamped a `seq`, and never rides the
+shared `world.tick` broadcast. Stamp each `world.input` with your own
+increasing counter through the third argument of `sendFire`, and the server
+echoes back the highest counter it has consumed.
+
+`world.tick` is a delta frame, not a snapshot, so prediction needs two pieces:
+a local entity map you accumulate from those deltas, and a buffer of inputs
+you have predicted but not yet had acked.
+
+```ts
+type Input = { move_x: number; move_y: number };
+type Delta = { op: "a" | "u" | "r"; id: string } & Record<string, unknown>;
+
+let seq = 0;
+const pending = new Map<number, Input>();
+
+function sendInput(input: Input) {
+  seq += 1;
+  pending.set(seq, input);
+  applyLocally(input);
+  ws.sendFire("world.input", input, { seq });
+}
+
+// Accumulate the deltas: "a" is a full add, "u" carries changed fields
+// only, "r" is a removal. Never assign the frame wholesale as state.
+const entities = new Map<string, Record<string, unknown>>();
+ws.on("world.tick", (payload) => {
+  for (const { op, id, ...fields } of payload.updates as Delta[]) {
+    if (op === "r") entities.delete(id);
+    else if (op === "a") entities.set(id, fields);
+    else entities.set(id, { ...entities.get(id), ...fields });
+  }
+});
+
+// `ack` infers as WorldAckPayload ({ tick, seq }) - no annotation, no cast.
+ws.on("world.ack", (ack) => {
+  for (const s of [...pending.keys()]) {
+    if (s <= ack.seq) pending.delete(s);
+  }
+  let state = entities.get(myEntityId);
+  if (!state) return;
+  for (const input of pending.values()) state = simulate(state, input);
+  render(state);
+});
+```
+
+Prune first, then replay: drop every buffered input at or below `ack.seq` and
+re-apply what is left on top of the accumulated state. The rest of the
+contract:
+
+- The ack is a high-water mark, not a receipt per input: `seq` is the highest
+  input consumed as of world tick `tick`. A rejected input still advances it,
+  so a dropped input never strands the client.
+- Order within a tick: `world.tick` goes out first, `world.ack` second, on the
+  same connection. Reconciling inside the ack handler therefore already sees
+  that tick's deltas; reconciling inside the tick handler replays against a
+  buffer that has not been pruned yet.
+- Accumulate every op, not just `"u"`. An entity's first delta is an `"a"`,
+  including your own player's, so a handler that only merges updates leaves
+  the map empty and every ack silently reconciles nothing. The first
+  `world.tick` after `world.joined` is a full snapshot (all `"a"`, `tick` 0);
+  everything after it is a delta.
+- Opt-in. The server acks only connections that stamped a `seq`. Subscribe
+  without ever sending one and you get silence, not an error.
+- On the wire `seq` is a top-level sibling of `payload`
+  (`{"type":"world.input","seq":412,"payload":{...}}`), never nested inside
+  it. `sendFire` stamps it for you, omits it entirely when you pass no `seq`,
+  and treats `0` as a value, not an absence.
+- The server accepts an integer `seq` in `0 .. Number.MAX_SAFE_INTEGER`
+  (its bound is exactly 2^53-1) and silently drops anything else with no ack
+  and no error. A whole-numbered JS value is safe - `JSON.stringify` writes
+  `3.0` as `3` - but a fractional counter (seeding from `performance.now()`,
+  say) goes out as `3.5` and never gets acked.
+- `WorldAckPayload` is exported if you want to name the type. `on()` infers it
+  through `WsPayloadMap`, so an ack handler needs no annotation, and
+  `JSON.parse` gives both fields as ordinary numbers, so no conversion either.
+- `seq` does not defeat `dedupe`: dedupe compares payloads only. A deduped
+  send never reaches the wire, so its `seq` is covered by the ack of the next
+  send that does.
+- Ack cadence follows the world mode's `broadcast_interval` (default `3`).
+  Set it to `1` for an ack every tick. See the
+  [world server guide](https://asobi.dev/docs/world-server).
+- Declare the buffered input as a `type`, not an `interface`. `sendFire` takes
+  `Record<string, unknown>`, and an interface has no implicit index signature,
+  so an `interface Input` fails to compile at the `sendFire` call.
+
+Requires a server on asobi core v0.84.0 or newer. Older servers never send
+`world.ack`, so the client sees silence rather than an error. On the client
+side, the typed `world.ack` dispatch and the `seq` option shipped in
+asobi-js v0.16.0; before that there is no `seq` option to stamp with.
+
+Full frame semantics: [client-side prediction](https://asobi.dev/docs/protocols/websocket#client-side-prediction).
 
 ## Engine and framework adapters
 

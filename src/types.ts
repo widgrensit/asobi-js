@@ -614,9 +614,11 @@ export interface WsMessage {
   type: string;
   payload: Record<string, unknown>;
   cid?: string;
-  // Client input sequence number, threaded as a top-level sibling of
-  // `payload` on a `world.input` send so the server can echo it back in a
-  // `world.ack`. Stamped only when the caller supplies one; never nested.
+  /**
+   * Client input sequence number, threaded as a top-level sibling of
+   * `payload` on a `world.input` send so the server can echo it back in a
+   * `world.ack`. Stamped only when the caller supplies one; never nested.
+   */
   seq?: number;
 }
 
@@ -702,11 +704,17 @@ export interface ModuleEventPayload {
   data: Record<string, unknown>;
 }
 
-// core's input-prediction ack primitive (core v0.84.0): the server confirms
-// it has applied inputs up to `seq` as of world tick `tick`. A client running
-// client-side prediction reconciles against `tick` and drops every buffered
-// input at or below `seq`. `seq` is the same counter the client stamps on its
-// `world.input` sends (see `WsMessage.seq` / `SendFireOptions.seq`).
+/**
+ * core's input-prediction ack primitive (core v0.84.0): the server confirms
+ * it has consumed inputs up to `seq` as of world tick `tick`. A client running
+ * client-side prediction reconciles against `tick` and drops every buffered
+ * input at or below `seq`. `seq` is the same counter the client stamps on its
+ * `world.input` sends (see `WsMessage.seq` / `SendFireOptions.seq`).
+ *
+ * A per-connection frame, sent only to a connection that stamped a `seq`, and
+ * a high-water mark rather than a receipt per input: a rejected input still
+ * advances it.
+ */
 export interface WorldAckPayload {
   tick: number;
   seq: number;
@@ -760,10 +768,12 @@ export interface SendFireOptions {
   // `sendFire`) never counts, so the first payload after a (re)connect
   // always goes out.
   dedupe?: boolean;
-  // Client input sequence number to stamp as a top-level sibling of the
-  // payload frame (e.g. on a `world.input` send), so the server can echo it
-  // back in a `world.ack` for prediction reconciliation. Stamped only when
-  // provided; kept numeric and never nested inside `payload`.
+  /**
+   * Client input sequence number to stamp as a top-level sibling of the
+   * payload frame (e.g. on a `world.input` send), so the server can echo it
+   * back in a `world.ack` for prediction reconciliation. Stamped only when
+   * provided; kept numeric and never nested inside `payload`.
+   */
   seq?: number;
 }
 

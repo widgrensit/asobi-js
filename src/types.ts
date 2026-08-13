@@ -614,6 +614,10 @@ export interface WsMessage {
   type: string;
   payload: Record<string, unknown>;
   cid?: string;
+  // Client input sequence number, threaded as a top-level sibling of
+  // `payload` on a `world.input` send so the server can echo it back in a
+  // `world.ack`. Stamped only when the caller supplies one; never nested.
+  seq?: number;
 }
 
 export type WsEventType =
@@ -651,6 +655,7 @@ export type WsEventType =
   | "session.heartbeat"
   | "vote.cast_ok"
   | "vote.veto_ok"
+  | "world.ack"
   | "world.finished"
   | "world.joined"
   | "world.left"
@@ -697,6 +702,16 @@ export interface ModuleEventPayload {
   data: Record<string, unknown>;
 }
 
+// core's input-prediction ack primitive (core v0.84.0): the server confirms
+// it has applied inputs up to `seq` as of world tick `tick`. A client running
+// client-side prediction reconciles against `tick` and drops every buffered
+// input at or below `seq`. `seq` is the same counter the client stamps on its
+// `world.input` sends (see `WsMessage.seq` / `SendFireOptions.seq`).
+export interface WorldAckPayload {
+  tick: number;
+  seq: number;
+}
+
 // Maps a WsEventType to its typed payload shape, so `on()` can return a
 // typed callback for events that have one instead of the generic
 // Record<string, unknown>. Only events with a real payload interface
@@ -711,6 +726,8 @@ export interface WsPayloadMap {
   // A single frame with no `game.*` alias: a named extension push, routed by
   // the app on `payload.event`.
   "module.event": ModuleEventPayload;
+  // Input-prediction ack: {tick, seq}. See WorldAckPayload.
+  "world.ack": WorldAckPayload;
 }
 
 export interface TokenPair {
@@ -743,6 +760,11 @@ export interface SendFireOptions {
   // `sendFire`) never counts, so the first payload after a (re)connect
   // always goes out.
   dedupe?: boolean;
+  // Client input sequence number to stamp as a top-level sibling of the
+  // payload frame (e.g. on a `world.input` send), so the server can echo it
+  // back in a `world.ack` for prediction reconciliation. Stamped only when
+  // provided; kept numeric and never nested inside `payload`.
+  seq?: number;
 }
 
 export interface ApiError {

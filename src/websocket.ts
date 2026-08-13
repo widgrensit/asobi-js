@@ -263,6 +263,9 @@ export class AsobiWebSocket {
     }
 
     const msg: WsMessage = { type, payload };
+    if (options?.seq !== undefined) {
+      msg.seq = options.seq;
+    }
     this.ws.send(JSON.stringify(msg));
     if (options?.dedupe) {
       this.lastFirePayloads.set(type, payload);

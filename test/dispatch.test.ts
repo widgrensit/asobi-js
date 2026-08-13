@@ -48,6 +48,7 @@ const EXPECTED: ReadonlySet<string> = new Set([
   "session.heartbeat",
   "vote.cast_ok",
   "vote.veto_ok",
+  "world.ack",
   "world.finished",
   "world.joined",
   "world.left",
@@ -149,6 +150,7 @@ describe("protocol dispatch", () => {
       "session.heartbeat",
       "vote.cast_ok",
       "vote.veto_ok",
+      "world.ack",
       "world.finished",
       "world.joined",
       "world.left",
@@ -212,6 +214,20 @@ describe("protocol dispatch", () => {
       event: "quests.completed",
       data: { quest_id: "01j8x000000000000000000042", reward: 250 },
     });
+  });
+
+  it("world.ack carries the typed tick and seq fields", () => {
+    const raw = readFileSync(join(FIXTURE_DIR, "world.ack.json"), "utf8");
+    const ws = newClient();
+    let received: import("../src/types.js").WorldAckPayload | null = null;
+    // No cast: the `on("world.ack", ...)` overload infers `payload` as
+    // WorldAckPayload directly via WsPayloadMap, so a field rename here
+    // fails to compile, not just to assert at runtime.
+    ws.on("world.ack", (payload) => {
+      received = payload;
+    });
+    feed(ws, raw);
+    expect(received).toEqual({ tick: 42, seq: 412 });
   });
 
   // Load-bearing for the frozen-at-1.0 wire: the inner `event` name is DATA

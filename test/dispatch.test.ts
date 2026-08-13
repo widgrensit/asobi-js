@@ -38,6 +38,7 @@ const EXPECTED: ReadonlySet<string> = new Set([
   "matchmaker.queued",
   "matchmaker.removed",
   "module.error",
+  "module.event",
   "module.message",
   "notification.new",
   "presence.updated",
@@ -138,6 +139,7 @@ describe("protocol dispatch", () => {
       "matchmaker.queued",
       "matchmaker.removed",
       "module.error",
+      "module.event",
       "module.message",
       "notification.new",
       "presence.updated",
@@ -191,6 +193,52 @@ describe("protocol dispatch", () => {
     expect(received).toEqual({
       module: "lua",
       message: "jij bent speler nummer 3",
+    });
+  });
+
+  it("module.event surfaces module, event, and data to the app", () => {
+    const raw = readFileSync(join(FIXTURE_DIR, "module.event.json"), "utf8");
+    const ws = newClient();
+    let received: import("../src/types.js").ModuleEventPayload | null = null;
+    // No cast: the `on("module.event", ...)` overload infers `payload` as
+    // ModuleEventPayload directly via WsPayloadMap, so a field rename here
+    // fails to compile, not just to assert at runtime.
+    ws.on("module.event", (payload) => {
+      received = payload;
+    });
+    feed(ws, raw);
+    expect(received).toEqual({
+      module: "quests",
+      event: "quests.completed",
+      data: { quest_id: "01j8x000000000000000000042", reward: 250 },
+    });
+  });
+
+  // Load-bearing for the frozen-at-1.0 wire: the inner `event` name is DATA
+  // the app routes on, not a dispatch gate. An unfamiliar name must still
+  // surface whole - otherwise a new extension event shipped after this client
+  // would be silently dropped.
+  it("module.event with an unfamiliar inner event still surfaces", () => {
+    const ws = newClient();
+    let received: import("../src/types.js").ModuleEventPayload | null = null;
+    ws.on("module.event", (payload) => {
+      received = payload;
+    });
+    feed(
+      ws,
+      JSON.stringify({
+        type: "module.event",
+        payload: {
+          module: "mystery",
+          event: "mystery.happened",
+          data: { anything: true },
+        },
+      }),
+    );
+    expect(received).toEqual({
+      module: "mystery",
+      event: "mystery.happened",
+      data: { anything: true },
     });
   });
 

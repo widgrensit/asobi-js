@@ -626,6 +626,7 @@ export type WsEventType =
   | "game.error"
   | "game.message"
   | "module.error"
+  | "module.event"
   | "module.message"
   | "match.finished"
   | "match.joined"
@@ -684,6 +685,18 @@ export interface GameMessagePayload {
   message: unknown;
 }
 
+// A named server-push event from an extension: `module.event`. Distinct from
+// module.message (an unnamed dev message): the producing extension is in
+// `module`, its `<domain>.<name>` event in `event`, and `data` is always a
+// JSON object. The app routes on `payload.event` - the name is data, not a
+// dispatch gate, so an unfamiliar event still surfaces. Unlike module.message
+// this frame has no `game.*` alias; it is a single frame.
+export interface ModuleEventPayload {
+  module: string;
+  event: string;
+  data: Record<string, unknown>;
+}
+
 // Maps a WsEventType to its typed payload shape, so `on()` can return a
 // typed callback for events that have one instead of the generic
 // Record<string, unknown>. Only events with a real payload interface
@@ -695,6 +708,9 @@ export interface WsPayloadMap {
   // deprecated alias the server still emits; both carry `module`.
   "module.error": GameErrorPayload;
   "module.message": GameMessagePayload;
+  // A single frame with no `game.*` alias: a named extension push, routed by
+  // the app on `payload.event`.
+  "module.event": ModuleEventPayload;
 }
 
 export interface TokenPair {

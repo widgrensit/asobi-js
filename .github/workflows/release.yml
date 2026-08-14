@@ -103,8 +103,21 @@ jobs:
           npm install
           npm run build
 
-      - name: Publish to npm
+      - name: Check npm credentials
         if: steps.resolve.outputs.skip == 'false'
+        id: npm
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -n "$NPM_TOKEN" ]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "NPM_TOKEN is unset - skipping npm publish." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Publish to npm
+        if: steps.npm.outputs.publish == 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish --provenance --access public

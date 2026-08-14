@@ -78,6 +78,10 @@ ws.on("world.ack", (ack) => console.log("consumed", ack.seq, "at tick", ack.tick
 const reply = await ws.send("match.join", { match_id: "abc" });
 console.log("joined", reply);
 
+// Into a live match of a mode, spawning one if there is none. Answered with
+// match.joined, exactly as match.join is. See "Finding or creating a match".
+console.log("joined", await ws.send("match.find_or_create", { mode: "arena" }));
+
 // Disconnect cleanly
 ws.close();
 ```
@@ -189,6 +193,37 @@ try {
 Replies are correlated by `cid`, so concurrent calls are safe and may answer
 out of order. `params` and the returned `result` are always objects, so either
 can grow a field without breaking a shipped client.
+
+### Finding or creating a match
+
+`match.find_or_create` puts you in a live match of a mode, spawning one if
+there is none. It is the match twin of `world.find_or_create`, and it is
+answered with `match.joined` - the same frame `match.join` is answered with, so
+the reply routes identically and the resolved payload is the same shape,
+roster included.
+
+```ts
+const joined = await ws.send("match.find_or_create", { mode: "arena" });
+console.log(joined.match_id, joined.players);
+```
+
+The payload takes `mode` only. Every other match parameter comes from the
+mode's server-side config.
+
+Prefer it to `match.list` followed by `match.join`. The two-step version races:
+two clients reading the same empty listing each create a match. This resolves
+server-side and is serialized, so simultaneous callers converge on one match.
+
+Eligibility is the mode's `quick_play` flag, which defaults to `false` for
+match modes, so a mode that has not opted in is refused with
+`quick_play_disabled`. `listed` is a separate axis - it is browser visibility,
+not the opt-in. The other refusals a caller can see are
+`match_capacity_reached` (the node-wide cap on live matches), `wrong_mode_type`
+(a world mode), and `join_rate_limited` (the same bucket as `match.join` and
+`world.join`). Each arrives as an `error` frame, so the `send()` promise
+rejects with the reason as its message.
+
+Requires a server on asobi core v0.86.0 or newer.
 
 ### Client-side prediction
 

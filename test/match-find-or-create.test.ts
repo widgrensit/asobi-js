@@ -90,7 +90,7 @@ describe("match.find_or_create", () => {
         reason: "quick_play_disabled",
         error: {
           code: "ws.request_failed",
-          message: "The server reported an error code it does not define.",
+          message: "The request failed. See `details.reason`.",
           details: { reason: "quick_play_disabled" },
         },
       },

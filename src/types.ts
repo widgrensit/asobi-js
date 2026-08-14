@@ -705,7 +705,7 @@ export interface ModuleEventPayload {
 }
 
 /**
- * core's input-prediction ack primitive (core v0.84.0): the server confirms
+ * core's input-prediction ack primitive (core v0.84.1): the server confirms
  * it has consumed inputs up to `seq` as of world tick `tick`. `seq` is the
  * same counter the client stamps on its `world.input` sends (see
  * `WsMessage.seq` / `SendFireOptions.seq`).
@@ -714,11 +714,8 @@ export interface ModuleEventPayload {
  * `seq`, and a high-water mark rather than a receipt per input: a rejected
  * input still advances it.
  *
- * Emitted per subscribed zone, not per connection, so the `seq` a client
- * receives can be lower than one it has already seen
- * (widgrensit/asobi#477). Reconcile against a running maximum: ignore any
- * ack that does not beat it, then drop every buffered input at or below the
- * new maximum. See the README's client-side prediction section.
+ * Reconcile by dropping every buffered input at or below `seq`, then replaying
+ * the rest. See the README's client-side prediction section.
  */
 export interface WorldAckPayload {
   tick: number;

@@ -33,14 +33,13 @@ function feed(ws: AsobiWebSocket, msg: unknown): void {
 }
 
 describe("match.find_or_create", () => {
-  it("carries mode alone, under a cid", async () => {
+  it("carries the payload as given, under a cid", async () => {
     const { ws, sent } = newClient();
     const pending = ws.send("match.find_or_create", { mode: "arena" });
 
     expect(sent).toHaveLength(1);
     expect(sent[0].type).toBe("match.find_or_create");
-    // Every other match parameter comes from the mode's server-side config,
-    // so a second key here would be a client inventing one.
+    // A transport: what the caller passed goes out, with nothing added.
     expect(sent[0].payload).toEqual({ mode: "arena" });
     expect(sent[0].cid).toBeTruthy();
 
@@ -100,7 +99,10 @@ describe("match.find_or_create", () => {
     await expect(pending).rejects.toThrow("quick_play_disabled");
   });
 
+  // Not exhaustive: the server may add refusals. `not_found` is the one an
+  // unknown or unconfigured mode name yields, which a typo reaches first.
   const REFUSALS = [
+    "not_found",
     "match_capacity_reached",
     "wrong_mode_type",
     "join_rate_limited",

@@ -207,8 +207,9 @@ const joined = await ws.send("match.find_or_create", { mode: "arena" });
 console.log(joined.match_id, joined.players);
 ```
 
-The payload takes `mode` only. Every other match parameter comes from the
-mode's server-side config.
+Every match parameter comes from the mode's server-side config. The payload
+names the mode; it cannot set `max_players`, the tick rate, or anything else
+about the match it lands in.
 
 Prefer it to `match.list` followed by `match.join`. The two-step version races:
 two clients reading the same empty listing each create a match. This resolves
@@ -217,11 +218,11 @@ server-side and is serialized, so simultaneous callers converge on one match.
 Eligibility is the mode's `quick_play` flag, which defaults to `false` for
 match modes, so a mode that has not opted in is refused with
 `quick_play_disabled`. `listed` is a separate axis - it is browser visibility,
-not the opt-in. The other refusals a caller can see are
-`match_capacity_reached` (the node-wide cap on live matches), `wrong_mode_type`
-(a world mode), and `join_rate_limited` (the same bucket as `match.join` and
-`world.join`). Each arrives as an `error` frame, so the `send()` promise
-rejects with the reason as its message.
+not the opt-in. Other refusals include `not_found` (the mode name is unknown or
+unconfigured, so a typo lands here), `match_capacity_reached` (the node-wide cap
+on live matches), `wrong_mode_type` (a world mode), and `join_rate_limited` (the
+same bucket as `match.join` and `world.join`). Each arrives as an `error` frame,
+so the `send()` promise rejects with the reason as its message.
 
 Requires a server on asobi core v0.86.0 or newer.
 
